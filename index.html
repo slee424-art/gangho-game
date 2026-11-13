@@ -1,0 +1,1352 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>강호대전: 천하쟁패 — 강호 대전략</title>
+<style>
+  :root { --bg:#14110f; --panel:#221c18; --line:#4a3a2c; --gold:#d9b46c; --text:#eadfce; --dim:#9a8b78; --red:#c0503c; --green:#6fae6a; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:"Noto Sans KR","Malgun Gothic",sans-serif; }
+  h1,h2,h3 { color:var(--gold); margin:0 0 10px; }
+  #app { max-width:1420px; margin:0 auto; padding:14px; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px; margin-bottom:12px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:10px; }
+  .card { background:#2b231d; border:1px solid var(--line); border-radius:8px; padding:10px; cursor:pointer; }
+  .card:hover { border-color:var(--gold); }
+  .card.mine { border-color:var(--gold); box-shadow:0 0 0 2px var(--gold) inset; }
+  .card.taken { opacity:.55; cursor:not-allowed; }
+  .card b { color:var(--gold); font-size:17px; }
+  .dim { color:var(--dim); font-size:13px; }
+  .red { color:var(--red); } .green { color:var(--green); } .gold { color:var(--gold); }
+  button { background:var(--gold); color:#2a1d0c; border:0; border-radius:6px; padding:7px 12px; font-weight:700; cursor:pointer; margin:2px; }
+  button.sub { background:#3a2f26; color:var(--text); border:1px solid var(--line); }
+  button.on { outline:2px solid var(--gold); }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th,td { padding:6px 8px; border-bottom:1px solid var(--line); text-align:right; }
+  th:first-child,td:first-child { text-align:left; }
+  .bar { height:10px; background:#3a2f26; border-radius:5px; overflow:hidden; }
+  .bar > div { height:100%; background:var(--gold); }
+  .tag { display:inline-block; font-size:11px; padding:1px 6px; border-radius:10px; background:#3a2f26; margin-left:6px; }
+  .tag.ai { color:var(--dim); } .tag.me { color:#2a1d0c; background:var(--gold); }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .top { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; }
+  .log div { font-size:13px; padding:2px 0; border-bottom:1px dashed #3a2f26; }
+  .toast { position:fixed; bottom:16px; left:50%; transform:translateX(-50%); background:#000c; border:1px solid var(--gold); padding:8px 16px; border-radius:20px; }
+  svg text { font-family:"Noto Sans KR","Malgun Gothic",sans-serif; }
+  .map-legend{display:flex;gap:14px;flex-wrap:wrap;color:#c5b58f;font-size:12px;margin-top:8px}
+  .map-frame{background:linear-gradient(135deg,#26352e,#171d1c);border:1px solid #806b45;border-radius:14px;padding:8px;box-shadow:0 10px 28px #0005}
+  .two { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .objective {display:flex;gap:8px;flex-wrap:wrap;align-items:center;background:linear-gradient(110deg,#34291b,#1d211e);border:1px solid #9a7843;border-radius:9px;padding:9px 12px;margin-bottom:10px}
+  .core-pill{display:inline-flex;align-items:center;gap:4px;padding:3px 7px;margin:2px;border:1px solid #8d7147;border-radius:14px;background:#30271d;font-size:12px}
+  .core-pill.dead{opacity:.45;text-decoration:line-through;border-color:#77463d}
+  .map-frame{overflow-x:auto;background:radial-gradient(ellipse at 50% 42%,#c7b88e 0%,#a79a73 58%,#716c51 100%);border:1px solid #a88a52;border-radius:14px;padding:8px;box-shadow:0 14px 40px #0009,inset 0 0 0 2px #d4b77a22}
+  button.sub.danger{border-color:#8d493e;color:#e9b3a5}
+  @media (max-width:760px){ .two { grid-template-columns:1fr; } }
+  @media (max-width:760px){ .two { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div id="app"><div class="panel">접속 중... (처음 화면이 안 뜨면 새로고침)</div></div>
+
+<script type="module">
+const appEl = document.getElementById('app');
+let Playroom;
+{
+  const pick = m => [m, m && m.default, m && m.Playroom].find(x => x && typeof x.insertCoin === 'function');
+  const sources = [
+    'https://esm.sh/playroomkit',
+    'https://cdn.jsdelivr.net/npm/playroomkit/+esm',
+    'https://esm.run/playroomkit',
+    'https://cdn.skypack.dev/playroomkit',
+    'https://unpkg.com/playroomkit?module',
+  ];
+  const errors = [];
+  for (const url of sources) {
+    try {
+      const found = pick(await import(url));
+      if (found) { Playroom = found; break; }
+      errors.push(url + ' → insertCoin 없음');
+    } catch (e) { errors.push(url + ' → ' + String(e && e.message || e)); }
+  }
+  if (!Playroom) {
+    for (const url of ['https://cdn.jsdelivr.net/npm/playroomkit/multiplayer.umd.js', 'https://unpkg.com/playroomkit/multiplayer.umd.js']) {
+      try {
+        await new Promise((ok, no) => { const s = document.createElement('script'); s.src = url; s.onload = ok; s.onerror = () => no(new Error('불러오기 실패')); document.head.appendChild(s); });
+        const found = pick(window.Playroom) || pick(window.PlayroomKit);
+        if (found) { Playroom = found; break; }
+        errors.push(url + ' → insertCoin 없음');
+      } catch (e) { errors.push(url + ' → ' + String(e && e.message || e)); }
+    }
+  }
+  if (!Playroom) {
+    appEl.innerHTML = '<div class="panel">라이브러리 로드 실패<br><span class="dim">' + errors.map(s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;')).join('<br>') +
+      '<br><br>광고차단/VPN/보안 프로그램을 끄거나 다른 브라우저로 시도해 주세요. 주소: ' + location.href + '</span></div>';
+    throw new Error('Playroom load failed');
+  }
+  window.Playroom = Playroom;
+}
+window.addEventListener('error', ev => {
+  appEl.innerHTML = '<div class="panel">오류: ' + String(ev.message) + '</div>';
+});
+window.addEventListener('unhandledrejection', ev => {
+  appEl.innerHTML = '<div class="panel">오류: ' + String(ev.reason && ev.reason.message || ev.reason) + '</div>';
+});
+setTimeout(() => {
+  if (!window.__ready) {
+    appEl.innerHTML += '<div class="panel">10초가 지나도 연결되지 않았어요.<br>' +
+      '<span class="dim">주소: ' + esc(location.href) + '</span></div>';
+  }
+}, 10000);
+
+/*LOGIC_START*/
+/* =========================================================
+   게임 규칙 (화면/네트워크와 상관없는 순수 계산 부분)
+   ========================================================= */
+const REALMS = ['삼류','이류','일류','절정','초절정','화경','현경','생사경','자연경'];
+const DAY_SECONDS = 15 * 60;                 // 실제 15분 = 게임 1일
+const MAX_PLAYERS = 6;
+const POWER = [1, 3, 10, 35, 120, 420, 1500, 5000, 18000];            // 경지별 1인 전투력
+const PROMOTE = [0.040, 0.030, 0.020, 0.008, 0.003, 0.0007, 0.0005, 0.0001]; // 하루 자연 승급 확률
+const TRAIN_COST = [2, 5, 750, 3000, 12500, 50000, 200000, 750000]; // 일류 이상은 영단(PILL_COST) 가격의 절반, 성공 확률 1/3            // 직접 지도 비용(1명당 금)
+const MAX_ART = 5;
+const RECRUIT_COST = 70;   // 삼류 1명 모집 비용 (50명 = 3,500금)
+const UPKEEP = [0.02, 0.04, 0.1, 0.4, 1.5, 5, 15, 40, 100]; // 경지별 1인 하루 유지비(금)
+const upkeepOf = s => Math.round(s.counts.reduce((a, c, i) => a + c * UPKEEP[i], 0));
+const PILL_NAME = ['','','소환단','대환단','태청단','자소단','만년설삼환','천년하수오환'];
+const PILL_COST = [0,0,1500,6000,25000,100000,400000,1500000];
+const RANKS = [[0,'무명 문파'],[400,'소문파'],[1500,'중견 문파'],[6000,'명문'],[25000,'대문파'],[100000,'천하제일 문파'],[400000,'강호의 패자']];
+const PALETTE = ['#c84d42','#4c91c9','#4f9b65','#c69a3d','#9568b5','#c87943','#3f9c9a','#b45b83','#8c9b4c','#d4d06a','#6d8ee0','#e07a9a','#7fc7a8','#a8785a'];
+
+const ORGS = [
+  ['상단',  '무역과 수익 (인원당 하루 금 +3)'],
+  ['정찰대','10명 이상이면 다른 문파의 전력을 정확히 볼 수 있음'],
+  ['암살대','5명 이상이면 다른 문파 문주 암살 시도 가능'],
+  ['호위대','문파 방어력 증가, 문주 보호'],
+  ['제자단','하루 승급 확률 증가'],
+  ['장서각','무공 연구비 할인'],
+];
+const ORG_NAMES = ORGS.map(o => o[0]);
+
+// 무공 종류별 (레벨당 공격 보너스, 레벨당 방어 보너스)
+const KIND = {
+  '검법':[0.05,0.01], '권법':[0.04,0.02], '장법':[0.04,0.02], '지법':[0.05,0.01], '봉법':[0.045,0.015],
+  '외공':[0.00,0.06], '내공':[0.03,0.03], '진법':[0.01,0.05], '경공':[0.02,0.02], '보법':[0.01,0.04],
+};
+
+Object.assign(KIND, {'도법':[0.055,0.01],'창법':[0.05,0.015],'암기':[0.05,0.0],'독공':[0.04,0.02]});
+// 무기 등급 (문파 무기고 수준)
+const WEAPONS = [
+  { g:'일반', n:'일반 철검',      atk:1.00, def:0.00, cost:0 },
+  { g:'고급', n:'정련 철검',      atk:1.08, def:0.02, cost:400 },
+  { g:'희귀', n:'명검',           atk:1.20, def:0.04, cost:1500 },
+  { g:'영물', n:'영검',           atk:1.40, def:0.07, cost:6000 },
+  { g:'전설', n:'신병',           atk:1.70, def:0.10, cost:24000 },
+  { g:'신화', n:'천하제일 신병',   atk:2.20, def:0.15, cost:90000 },
+];
+
+// 구파일방 (고유 무공 3개씩, base = 경지별 시작 인원)
+const SECTS = {
+  '소림파': {highTalent:0.82,core:true,sect:'소림파',siteName:'본산', traits:{"pros": ["금강불괴: 방어 배율 +12%", "외공 수련 특화", "초기 하급 무인 대규모 보유", "장기 수비전에서 강함"], "cons": ["기동전과 추격전에 취약", "고경지 승급 속도 느림", "무공 연구 비용 부담", "재정 수입이 적음"], "stats": {"atk": 0.96, "def": 1.12, "income": 0.92, "promote": 0.9, "recruit": 1.12, "artCost": 1.1}}, desc:'방어력, 외공, 대규모 병력', base:[900,300,90,20,4,1,0,0,0],
+    arts:[{n:'나한복호권',k:'권법'},{n:'금강불괴신공',k:'외공'},{n:'달마검법',k:'검법'}] },
+  '무당파': {highTalent:1.0,core:true,sect:'무당파',siteName:'본산', traits:{"pros": ["태극의 조화: 공격·방어 균형", "내공 수련 효율 우수", "장기전에 강함", "경지 상승이 안정적"], "cons": ["초기 병력 규모가 작음", "폭발적인 공격력 부족", "영토 확장 속도 느림", "무공 연구에 자금 소모"], "stats": {"atk": 1.03, "def": 1.03, "income": 0.96, "promote": 1.0, "recruit": 0.94, "artCost": 1.06}}, desc:'검술, 태극, 내공', base:[400,200,90,27,5,1,0,0,0],
+    arts:[{n:'태극검',k:'검법'},{n:'태극권',k:'권법'},{n:'양의심공',k:'내공'}] },
+  '화산파': {highTalent:1.35,core:true,sect:'화산파',siteName:'본산', traits:{"pros": ["매화검법: 공격 배율 +12%", "소수정예 자질: 승급 확률 ×1.5", "고경지 무인 비율이 높음", "기습적인 검격에 강함"], "cons": ["신규 무인 충원 속도 느림", "방어전에서 불리함", "영토 수입 의존도가 큼", "병력 손실 회복이 느림"], "stats": {"atk": 1.12, "def": 1.0, "income": 1.0, "promote": 1.5, "recruit": 0.95, "artCost": 1.0}}, desc:'검술, 소수정예 · 무인 자질 우수', talent:1.5, talentLabel:'소수정예 자질 보정 ×1.5', base:[200,120,70,30,8,2,0,0,0],
+    arts:[{n:'매화검법',k:'검법'},{n:'자하신공',k:'내공'},{n:'암향표영',k:'경공'}] },
+  '종남파': {highTalent:0.95,core:true,sect:'종남파',siteName:'본산', traits:{"pros": ["천강북두진: 방어 배율 +8%", "진법 연구 비용 절감", "검법과 내공의 균형", "거점 방어에 유리"], "cons": ["공격 특화 무공이 부족", "초기 고수 수가 적음", "병력 증원 속도 보통 이하", "기동력이 부족함"], "stats": {"atk": 1.02, "def": 1.08, "income": 0.96, "promote": 0.98, "recruit": 0.94, "artCost": 0.88}}, desc:'검법, 진법', base:[350,180,80,25,5,1,0,0,0],
+    arts:[{n:'전진검법',k:'검법'},{n:'천강북두진',k:'진법'},{n:'선천공',k:'내공'}] },
+  '아미파': {highTalent:1.15,core:true,sect:'아미파',siteName:'본산', traits:{"pros": ["유연한 검술과 경공: 공격 +7%", "수련 효율이 안정적", "무공 연구 비용 절감", "균형 잡힌 전투 운용"], "cons": ["대규모 병력전에 약함", "초기 절정급 무인 부족", "경제력이 강하지 않음", "정면 돌파력이 낮음"], "stats": {"atk": 1.07, "def": 1.05, "income": 1.03, "promote": 1.08, "recruit": 1.02, "artCost": 0.9}}, desc:'경공, 검술, 회복', base:[350,180,80,28,6,1,0,0,0],
+    arts:[{n:'아미검법',k:'검법'},{n:'금정신공',k:'내공'},{n:'소요경공',k:'경공'}] },
+  '개방':   {highTalent:0.62,core:true,sect:'개방',siteName:'본산', traits:{"pros": ["거대 조직: 무인 충원 +25%", "방대한 인맥: 수입 +20%", "초기 인원과 하급 무인 압도", "소모전·장기전에 강함"], "cons": ["자질 편차: 자연 승급 확률 ×0.75", "정예 전투력 부족", "개별 무인 방어력 낮음", "고급 무공 연구 효율 낮음"], "stats": {"atk": 0.93, "def": 0.9, "income": 1.2, "promote": 0.75, "recruit": 1.25, "artCost": 1.08}}, desc:'정보력, 인맥, 거대 조직 · 자질 편차 큼', talent:0.75, talentLabel:'대규모 조직 자질 보정 ×0.75', base:[1200,250,60,12,3,1,0,0,0],
+    arts:[{n:'항룡십팔장',k:'장법'},{n:'타구봉법',k:'봉법'},{n:'취팔선보',k:'보법'}] },
+  '곤륜파': {highTalent:1.1,core:true,sect:'곤륜파',siteName:'본산', traits:{"pros": ["심후한 내공: 공격·방어 균형 보정", "경공 특화: 기동전 능숙", "승급 효율 소폭 증가", "험준한 지역 적응력"], "cons": ["초기 인원 부족", "영토 수입 의존도가 큼", "대규모 병력 보충이 느림", "전문화된 방어 무공 부족"], "stats": {"atk": 1.04, "def": 1.03, "income": 0.93, "promote": 1.05, "recruit": 0.9, "artCost": 1.0}}, desc:'내공, 경공', base:[300,160,80,28,6,1,0,0,0],
+    arts:[{n:'운룡대팔식',k:'경공'},{n:'곤륜검법',k:'검법'},{n:'현천신공',k:'내공'}] },
+  '공동파': {highTalent:0.9,core:true,sect:'공동파',siteName:'본산', traits:{"pros": ["칠상권: 공격 배율 +12%", "변칙 무공으로 기습에 강함", "공격적인 전투 성향", "초기 정예 비율 양호"], "cons": ["내공 운용의 위험성", "방어 배율 -8%", "재정 안정성이 낮음", "고급 무공 수련 비용 증가"], "stats": {"atk": 1.12, "def": 0.92, "income": 0.9, "promote": 0.94, "recruit": 0.98, "artCost": 1.1}}, desc:'독특한 무공, 공격', base:[300,170,85,30,6,1,0,0,0],
+    arts:[{n:'칠상권',k:'권법'},{n:'복마검법',k:'검법'},{n:'오행진',k:'진법'}] },
+  '점창파': {highTalent:1.16,core:true,sect:'점창파',siteName:'본산', traits:{"pros": ["쾌검 특화: 공격 배율 +10%", "일지선으로 정밀 타격", "기동전과 선제 공격에 강함", "자질이 안정적으로 성장"], "cons": ["정면 방어전에 약함", "초기 병력 규모가 작음", "장기 소모전에 불리", "무공 연구비 부담"], "stats": {"atk": 1.1, "def": 0.93, "income": 0.95, "promote": 1.02, "recruit": 0.9, "artCost": 1.05}}, desc:'빠른 검술, 암습', base:[250,140,70,28,7,1,0,0,0],
+    arts:[{n:'사일검법',k:'검법'},{n:'일지선',k:'지법'},{n:'점창암영보',k:'보법'}] },
+};
+
+const H = (n,hi,desc,base,arts,pros,cons,s) => ({highTalent:hi,core:true,house:true,sect:n,siteName:'본가',desc,base,arts,traits:{pros,cons,stats:{atk:s[0],def:s[1],income:s[2],promote:s[3],recruit:s[4],artCost:s[5]}}});
+Object.assign(SECTS, {
+ '남궁세가':H('남궁세가',1.2,'제왕검형 · 검가의 명예, 공수 겸비',[500,260,100,32,6,1,0,0,0],[{n:'제왕검형',k:'검법'},{n:'창궁무애검법',k:'검법'},{n:'천외신공',k:'내공'}],['제왕검형: 공격 +8%','검가의 자질: 승급 ×1.1','탄탄한 재정 +10%'],['명문의 자존심: 충원 느림','방어는 평범','무공 연구비 부담']  ,[1.08,1.02,1.1,1.1,0.9,1.05]),
+ '하북팽가':H('하북팽가',0.95,'도법과 외공 · 정면 돌파의 가문',[600,260,95,28,5,1,0,0,0],[{n:'오호단문도',k:'도법'},{n:'혼원벽력도',k:'도법'},{n:'금강외공',k:'외공'}],['오호단문도: 공격 +10%','다수의 도객 보유','외공으로 단단함'],['기동력 부족','승급 속도 느림','연구 효율 낮음'],[1.1,1.04,1.0,0.92,1.05,1.05]),
+ '사천당문':H('사천당문',1.05,'암기와 독 · 암살과 기습의 가문',[350,200,80,26,5,1,0,0,0],[{n:'만천화우',k:'암기'},{n:'칠독장',k:'독공'},{n:'귀영보',k:'보법'}],['암기·독으로 공격 +6%','암살에 특화','소수정예 운용'],['방어 배율 -10%','대규모전 불리','병력 충원 느림'],[1.06,0.9,1.0,1.0,0.9,1.0]),
+ '산동악가':H('산동악가',1.0,'창법과 충의 · 굳건한 방진',[550,250,90,30,5,1,0,0,0],[{n:'악가창법',k:'창법'},{n:'멸마권',k:'권법'},{n:'충의심공',k:'내공'}],['악가창법으로 방어·공격 균형','충원 안정적','방어 +10%'],['수입이 다소 낮음','기동전 약함','화려한 무공 부족'],[1.04,1.1,0.95,1.02,1.02,1.0]),
+ '제갈세가':H('제갈세가',1.1,'진법과 지략 · 재정과 연구의 가문',[300,180,85,30,7,2,0,0,0],[{n:'팔괘진',k:'진법'},{n:'제갈신산',k:'지법'},{n:'천기신공',k:'내공'}],['수입 +15%','무공 연구비 -15%','승급 효율 +10%'],['초기 병력 적음','공격 배율 -2%','충원 느림'],[0.98,1.08,1.15,1.1,0.9,0.85]),
+});
+// 강호 지도 (x,y = 지도 위 위치, guard = 수비 전력, income = 하루 수입, appear = 등장하는 날)
+const NODES = {
+  '소림파':{x:430,y:260,type:'sect',guard:500,income:40},
+  '무당파':{x:460,y:350,type:'sect',guard:500,income:40},
+  '화산파':{x:330,y:230,type:'sect',guard:500,income:40},
+  '종남파':{x:300,y:290,type:'sect',guard:500,income:40},
+  '아미파':{x:170,y:340,type:'sect',guard:500,income:40},
+  '개방':  {x:440,y:190,type:'sect',guard:500,income:40},
+  '곤륜파':{x:110,y:200,type:'sect',guard:500,income:40},
+  '공동파':{x:230,y:160,type:'sect',guard:500,income:40},
+  '점창파':{x:190,y:440,type:'sect',guard:500,income:40},
+  '북철광':{x:540,y:140,type:'mine',guard:300,income:60},
+  '서은광':{x:100,y:290,type:'mine',guard:350,income:60},
+  '약초곡':{x:350,y:400,type:'herb',guard:250,income:40},
+  '남약초밭':{x:560,y:310,type:'herb',guard:300,income:40},
+  '낙양':  {x:510,y:225,type:'city',guard:600,income:120},
+  '강남':  {x:570,y:410,type:'city',guard:600,income:120},
+  '남궁세가':{x:760,y:390,type:'house',guard:18000,income:360,appear:10},
+  '하북팽가':{x:760,y:160,type:'house',guard:17000,income:350,appear:10},
+  '사천당문':{x:80,y:540,type:'house',guard:16500,income:350,appear:10},
+  '산동악가':{x:900,y:280,type:'house',guard:16000,income:340,appear:10},
+  '제갈세가':{x:500,y:650,type:'house',guard:17500,income:360,appear:10},
+};
+// 강호 외곽까지 확장: 각 문파의 산하 문파와 중립 요충지
+const SUBSECTS = {
+  '소림파': [['소림·나한원','나한원',560,80],['소림·달마원','달마원',640,120]],
+  '무당파': [['무당·청허관','청허관',820,500],['무당·자운관','자운관',900,560]],
+  '화산파': [['화산·매화검관','매화검관',240,70],['화산·연검루','연검루',160,90]],
+  '종남파': [['종남·전진별원','전진별원',350,40],['종남·북두원','북두원',420,80]],
+  '아미파': [['아미·백운암','백운암',80,410],['아미·금정별원','금정별원',120,470]],
+  '개방': [['개방·장안분타','장안분타',580,210],['개방·하남분타','하남분타',660,260]],
+  '곤륜파': [['곤륜·설산관','설산관',40,80],['곤륜·옥룡전','옥룡전',80,150]],
+  '공동파': [['공동·칠성원','칠성원',300,130],['공동·현천관','현천관',360,170]],
+  '점창파': [['점창·남천검루','남천검루',180,600],['점창·비성관','비성관',260,650]],
+};
+for (const [sect, sites] of Object.entries(SUBSECTS))
+  for (const [id, label, x, y] of sites)
+    NODES[id] = {x,y,type:'subsect',guard:1250,income:75,sect,siteName:label};
+Object.assign(NODES, {
+  '천산관문':{x:40,y:260,type:'pass',guard:1800,income:90},
+  '황하나루':{x:700,y:340,type:'city',guard:1500,income:130},
+  '남령산맥':{x:400,y:700,type:'pass',guard:1700,income:85},
+  '동해항구':{x:960,y:470,type:'city',guard:1600,income:140},
+  '서역교역로':{x:30,y:350,type:'city',guard:1400,income:120},
+});
+// 문파마다 본산을 포함해 핵심 거점 3곳을 보유한다. 위성 거점은 본산 주변의 방어 시설이다.
+const CORE_SITES = {
+  '소림파': [['소림파·장경각','장경각',404,232],['소림파·금강문','금강문',456,232]],
+  '무당파': [['무당파·자소궁','자소궁',434,378],['무당파·진무전','진무전',486,378]],
+  '화산파': [['화산파·연화봉','연화봉',304,202],['화산파·검련대','검련대',356,202]],
+  '종남파': [['종남파·전진관','전진관',274,318],['종남파·북두각','북두각',326,318]],
+  '아미파': [['아미파·금정사','금정사',144,318],['아미파·복호전','복호전',196,318]],
+  '개방': [['개방·총타','총타',414,162],['개방·분타','분타',466,162]],
+  '곤륜파': [['곤륜파·옥허궁','옥허궁',84,176],['곤륜파·천지대','천지대',136,176]],
+  '공동파': [['공동파·칠성전','칠성전',204,136],['공동파·비전각','비전각',256,136]],
+  '점창파': [['점창파·천문대','천문대',164,416],['점창파·검루','검루',216,416]],
+};
+Object.assign(CORE_SITES, {
+ '남궁세가':[['남궁세가·창궁각','창궁각',0,0],['남궁세가·검왕전','검왕전',0,0]],
+ '하북팽가':[['팽가·오호당','오호당',0,0],['팽가·연무장','연무장',0,0]],
+ '사천당문':[['당문·암기고','암기고',0,0],['당문·독각','독각',0,0]],
+ '산동악가':[['악가·충의당','충의당',0,0],['악가·창림','창림',0,0]],
+ '제갈세가':[['제갈·팔괘진','팔괘진',0,0],['제갈·서고','서고',0,0]],
+});
+const CORE_SITE_IDS = {};
+for (const [sect, sites] of Object.entries(CORE_SITES)) {
+  CORE_SITE_IDS[sect] = [sect];
+  for (const [id, label, x, y] of sites) {
+    NODES[id] = {x,y,type:'stronghold',guard:1100,income:0,core:true,sect,siteName:label};
+    CORE_SITE_IDS[sect].push(id);
+  }
+}
+const NODE_ICON = { sect:'🏯', subsect:'⛩️', stronghold:'🛕', mine:'⛏️', herb:'🌿', city:'🏙️', house:'🏰', pass:'⛰️' };
+const NODE_LABEL = { sect:'문파 본산', mine:'광산', herb:'약초밭', city:'무역 도시', house:'세가' };
+const EDGES = [
+  ['화산파','종남파'],['화산파','개방'],['화산파','공동파'],['화산파','소림파'],['종남파','소림파'],['종남파','아미파'],
+  ['종남파','약초곡'],['소림파','개방'],['소림파','무당파'],['소림파','낙양'],['무당파','약초곡'],['무당파','강남'],
+  ['무당파','남약초밭'],['개방','낙양'],['개방','북철광'],['개방','공동파'],['공동파','곤륜파'],['곤륜파','서은광'],
+  ['곤륜파','화산파'],['서은광','아미파'],['아미파','약초곡'],['아미파','점창파'],['점창파','약초곡'],['낙양','북철광'],
+  ['낙양','남약초밭'],['남약초밭','강남'],['남궁세가','남약초밭'],['남궁세가','강남'],['하북팽가','북철광'],['하북팽가','낙양'],
+  ['사천당문','아미파'],['사천당문','약초곡'],['산동악가','낙양'],['산동악가','남약초밭'],['제갈세가','약초곡'],
+  ['제갈세가','강남'],['제갈세가','무당파'],
+];
+EDGES.push(
+  ['소림파','소림·나한원'],['소림파','소림·달마원'],['소림·달마원','하북팽가'],['소림·나한원','황하나루'],
+  ['무당파','무당·청허관'],['무당파','무당·자운관'],['무당·자운관','동해항구'],['무당·청허관','남궁세가'],
+  ['화산파','화산·매화검관'],['화산파','화산·연검루'],['화산·매화검관','천산관문'],['화산·연검루','공동파'],
+  ['종남파','종남·전진별원'],['종남파','종남·북두원'],['종남·북두원','황하나루'],
+  ['아미파','아미·백운암'],['아미파','아미·금정별원'],['아미·백운암','사천당문'],
+  ['개방','개방·장안분타'],['개방','개방·하남분타'],['개방·하남분타','황하나루'],
+  ['곤륜파','곤륜·설산관'],['곤륜파','곤륜·옥룡전'],['곤륜·설산관','서역교역로'],
+  ['공동파','공동·칠성원'],['공동파','공동·현천관'],['공동·현천관','천산관문'],
+  ['점창파','점창·남천검루'],['점창파','점창·비성관'],['점창·남천검루','남령산맥'],
+  ['천산관문','서역교역로'],['황하나루','동해항구'],['남령산맥','사천당문'],['남령산맥','동해항구']
+);
+const ADJ = {};
+for (const id in NODES) ADJ[id] = [];
+for (const [a, b] of EDGES) { ADJ[a].push(b); ADJ[b].push(a); }
+// 핵심 거점은 본산에 연결되며, 본산과 맞닿은 전선에서 공격할 수 있다.
+for (const sect in CORE_SITES) for (const [id] of CORE_SITES[sect]) {
+  if (!EDGES.some(e => e.includes(id) && e.includes(sect))) EDGES.push([sect,id]);
+  ADJ[id] = [sect, ...ADJ[sect]];
+}
+const MAPW = 1800, MAPH = 1200;
+const LAYOUT_HQ = {'곤륜파':[170,300],'공동파':[450,170],'화산파':[730,270],'개방':[1020,180],'종남파':[620,570],'소림파':[960,500],'무당파':[1010,840],'아미파':[330,790],'점창파':[380,1060],'하북팽가':[1360,150],'산동악가':[1540,400],'남궁세가':[1480,800],'제갈세가':[760,1080],'사천당문':[110,980]};
+const LAYOUT_NEUTRAL = {'북철광':[1200,300],'서은광':[170,590],'약초곡':[560,880],'남약초밭':[1250,680],'낙양':[1210,460],'강남':[1230,960],'천산관문':[70,110],'서역교역로':[60,500],'황하나루':[1410,480],'남령산맥':[560,1160],'동해항구':[1672,690]};
+const pol = (p, r, deg) => [Math.round(p[0] + r * Math.cos(deg * Math.PI / 180)), Math.round(p[1] + r * Math.sin(deg * Math.PI / 180))];
+for (const [n, p] of Object.entries(LAYOUT_HQ)) {
+  NODES[n].x = p[0]; NODES[n].y = p[1]; delete NODES[n].appear; if (NODES[n].type === 'house') NODES[n].income = 40;
+  CORE_SITE_IDS[n].slice(1).forEach((id, i) => { const q = pol(p, 82, [140, 40][i]); NODES[id].x = q[0]; NODES[id].y = q[1]; });
+  (SUBSECTS[n] || []).forEach(([id], i) => { const q = pol(p, 125, [225, 315][i]); NODES[id].x = q[0]; NODES[id].y = q[1]; });
+}
+for (const [n, p] of Object.entries(LAYOUT_NEUTRAL)) { NODES[n].x = p[0]; NODES[n].y = p[1]; }
+
+// 독립 중소 문파: 산하 문파가 아닌 별도 세력으로 세계 지도에 등장한다.
+const MINOR_SECTS = [
+  ['철검문',220,430,'검법','철의검결'],['청성파',470,360,'검법','청운검诀'],
+  ['형산파',680,390,'검법','회안검법'],['태산파',1120,300,'외공','태산십팔반'],
+  ['해남파',1510,1030,'검법','남해검诀'],['점혈문',1450,570,'지법','점혈수'],
+  ['벽력당',1320,160,'암기','벽력탄술'],['비연문',900,1060,'경공','비연신법'],
+  ['금도문',260,650,'도법','금도십식'],['백운관',820,690,'내공','백운심법'],
+  ['흑호방',1580,560,'권법','흑호권'],['유성검관',1080,1010,'검법','유성십삼검']
+];
+for (let i = 0; i < MINOR_SECTS.length; i++) {
+  const [name,x,y,kind,art] = MINOR_SECTS[i];
+  SECTS[name] = {
+    highTalent: 0.88 + (i % 5) * 0.06, core: true, sect: name, siteName: '본산',
+    desc: '강호 중소 문파 · 독립 세력',
+    base: [170 + (i%4)*35, 85 + (i%3)*20, 24 + (i%4)*5, 7 + (i%3), 1, 0, 0, 0, 0],
+    arts: [{n:art,k:kind},{n:'기초 내공심법',k:'내공'},{n:'문파 보법',k:'보법'}],
+    traits:{pros:['지역 특화 무공','독립적인 영토와 외교'],cons:['초기 병력과 재정이 작음'],stats:{atk:1+(i%3)*0.025,def:0.98+(i%2)*0.04,income:0.92+(i%4)*0.04,promote:0.95+(i%3)*0.04,recruit:1,artCost:0.95+(i%3)*0.05}}
+  };
+  NODES[name] = {x,y,type:'sect',guard:900,income:55};
+  const coreA = `${name}·연무당`, coreB = `${name}·비전각`;
+  NODES[coreA] = {x:x-34,y:y+38,type:'stronghold',guard:750,income:0,core:true,sect:name,siteName:'연무당'};
+  NODES[coreB] = {x:x+38,y:y+34,type:'stronghold',guard:750,income:0,core:true,sect:name,siteName:'비전각'};
+  CORE_SITE_IDS[name] = [name,coreA,coreB];
+  ADJ[name] = [coreA,coreB]; ADJ[coreA] = [name]; ADJ[coreB] = [name];
+  // 각 중소 문파는 가장 가까운 기존 주요 거점과 교역·전쟁로로 연결된다.
+  const nearest = Object.keys(LAYOUT_HQ).sort((a,b) => Math.hypot(NODES[a].x-x,NODES[a].y-y)-Math.hypot(NODES[b].x-x,NODES[b].y-y))[0];
+  ADJ[name].push(nearest); ADJ[nearest].push(name); EDGES.push([name,nearest],[name,coreA],[name,coreB]);
+}
+
+let ONLINE = null;   // 지금 접속 중인 플레이어 id 모음 (접속 안 한 문파는 방어 보너스)
+
+const sum = a => a.reduce((x, y) => x + y, 0);
+const clone = o => JSON.parse(JSON.stringify(o));
+const rnd = Math.random;
+
+function logPush(W, text, k) { W.log.push({ d: W.d, t: text, k: k || 'sys' }); if (W.log.length > 60) W.log.shift(); }
+function orgTotal(s) { return sum(ORG_NAMES.map(n => s.orgs[n] || 0)); }
+function avail(s) { const c = s.counts.slice(); c[0] = Math.max(0, c[0] - orgTotal(s)); return c; }
+function power(c) { let p = 0; for (let i = 0; i < c.length; i++) p += c[i] * POWER[i]; return p; }
+// 초월급 기인은 일반 무인과 별도로 전투력에 반영된다.
+function prodigyPower(s) { return s && s.prodigy && !s.prodigy.away ? POWER[s.prodigy.realm] * 80 : 0; }
+function sectPower(s, counts) { return power(counts || s.counts) + prodigyPower(s); }
+function fixOrgs(s) {
+  const max = Math.floor(s.counts[0] * 0.8), t = orgTotal(s);
+  if (t > max) { const f = max / t; for (const n of ORG_NAMES) s.orgs[n] = Math.floor((s.orgs[n] || 0) * f); }
+}
+function atkMult(s) {
+  let a = 0; SECTS[s.name].arts.forEach((art, i) => { a += KIND[art.k][0] * s.arts[i]; });
+  return (1 + a) * WEAPONS[s.weapon].atk * ((SECTS[s.name].traits && SECTS[s.name].traits.stats.atk) || 1);
+}
+function defMult(s) {
+  let d = 0; SECTS[s.name].arts.forEach((art, i) => { d += KIND[art.k][1] * s.arts[i]; });
+  d += WEAPONS[s.weapon].def + Math.min(0.3, (s.orgs['호위대'] || 0) * 0.002);
+  return (1 + d) * ((SECTS[s.name].traits && SECTS[s.name].traits.stats.def) || 1);
+}
+function artCost(s, i) { return Math.ceil(150 * Math.pow(s.arts[i] + 1, 2) * (1 - Math.min(0.5, (s.orgs['장서각'] || 0) / 200)) * ((SECTS[s.name].traits && SECTS[s.name].traits.stats.artCost) || 1)); }
+function visible(id, day) { const a = NODES[id].appear; return !a || day >= a; }
+function ownedNodes(W, name) { return Object.keys(W.nodes).filter(id => W.nodes[id].owner === name); }
+function guardOf(id, day) { return NODES[id].guard * (1 + 0.02 * day); }
+function isOffline(s) { return s.owner !== 'AI' && ONLINE !== null && !ONLINE.has(s.owner); }
+function incomeOf(W, s) { return grossOf(W, s) - upkeepOf(s); }
+function grossOf(W, s) {
+  let inc = 150 + (s.orgs['상단'] || 0) * 3;
+  for (const id in W.nodes) if (W.nodes[id].owner === s.name) inc += NODES[id].income;
+  return Math.floor(inc * ((SECTS[s.name].traits && SECTS[s.name].traits.stats.income) || 1));
+}
+function defPowerOf(W, id, day) {
+  const n = W.nodes[id], owner = n && n.owner, d = owner ? W.sects[owner] : null;
+  const fort = (n.fortLevel || 0) * guardOf(id, day) * 0.55;
+  const garrison = power(n.garrison || []);
+  if (n.core || SECTS[id]) {
+    const sect = W.sects[n.sect || id] || d;
+    if (!sect) return guardOf(id, day) + fort + garrison;
+    return sectPower(sect, avail(sect)) * defMult(sect) * 1.2 * (sect.leaderDead ? 0.85 : 1) * (isOffline(sect) ? 1.3 : 1) + fort + garrison;
+  }
+  const g = guardOf(id, day);
+  if (d) return g + 0.15 * sectPower(d, avail(d)) * defMult(d) + fort + garrison;
+  return g + fort + garrison;
+}
+function assassinChance(s, t) {
+  const a = (s.orgs['암살대'] || 0) * 2 + 1;
+  const d = (t.orgs['호위대'] || 0) * 2 + sum(t.counts.slice(3)) * 0.5 + 5;
+  return Math.min(0.85, Math.max(0.05, a / (a + d)));
+}
+
+function makeWorld(picks) {   // picks = { 문파이름: {id, name} }
+  const sects = {}, nodes = {}, colors = {}; let ci = 0;
+  for (const name in SECTS) {
+    const o = picks[name];
+    if (o && !colors[o.id]) colors[o.id] = PALETTE[ci++ % PALETTE.length];
+    const counts = SECTS[name].base.slice(), c0 = counts[0];
+    sects[name] = {
+      name, owner: o ? o.id : 'AI', ownerName: o ? o.name : 'AI', color: o ? colors[o.id] : PALETTE[Object.keys(SECTS).indexOf(name) % PALETTE.length],
+      counts, gold: 3000,
+      orgs: { '상단': Math.min(30, Math.floor(c0 * 0.08)), '정찰대': 5, '암살대': 0, '호위대': Math.min(8, Math.floor(c0 * 0.02)), '제자단': Math.min(10, Math.floor(c0 * 0.03)), '장서각': Math.min(8, Math.floor(c0 * 0.02)) },
+      arts: [0, 0, 0], weapon: 0, leaderDead: false, leaderDeadDay: 0, peak: sum(counts), defeated: false, lastAssDay: 0,
+      prodigy: null, academy: null, masters: [], pills: {},
+    };
+  }
+  // 세계 전체에서 0.001% 확률로 단 한 명의 초월급 기인이 탄생한다.
+  let prodigySect = null;
+  if (rnd() < 0.00001) {
+    const names = Object.keys(sects);
+    prodigySect = names[Math.floor(rnd() * names.length)];
+    sects[prodigySect].prodigy = { name: '천외기인', realm: 3, away: false };
+  }
+  for (const id in NODES) nodes[id] = { owner: NODES[id].core ? NODES[id].sect : (SECTS[id] ? id : (NODES[id].type === 'subsect' ? NODES[id].sect : null)), siege: null, destroyed: false, fortLevel: 0, garrison: REALMS.map(() => 0) };
+  const W = { sects, nodes, marches: [], log: [], colors, d: 1, nextId: 0, elapsed: 0 };
+  if (prodigySect) logPush(W, `🌌 천지개벽! [${prodigySect}]에 0.001%의 기연, 초월급 인간 「천외기인」이 나타났다!`, 'war');
+  return W;
+}
+
+function makeUnits(s, mode) {
+  const av = avail(s), u = REALMS.map(() => 0);
+  for (let i = 0; i < 9; i++) {
+    let f = 0;
+    if (mode === 'mass') f = i <= 2 ? 0.8 : 0;
+    else if (mode === 'elite') f = i >= 3 ? 1 : 0;
+    else f = 0.7;
+    u[i] = Math.floor(av[i] * f);
+  }
+  return u;
+}
+
+function launch(W, name, to, mode) {
+  const s = W.sects[name];
+  if (!s || s.defeated || !NODES[to] || !visible(to, W.d) || W.nodes[to].owner === name || W.nodes[to].destroyed) return false;
+  if (W.marches.filter(m => m.sect === name).length >= 2) return false;
+  const from = ADJ[to].find(id => W.nodes[id].owner === name);
+  if (!from) return false;
+  const units = makeUnits(s, mode);
+  const specialPower = mode !== 'mass' && s.prodigy && !s.prodigy.away ? POWER[s.prodigy.realm] * 80 : 0;
+  if (power(units) + specialPower <= 0) return false;
+  for (let i = 0; i < 9; i++) s.counts[i] -= units[i];
+  if (specialPower) s.prodigy.away = true;
+  fixOrgs(s);
+  W.nextId = (W.nextId || 0) + 1;
+  W.marches.push({ id: W.nextId, sect: name, from, to, units, specialPower, start: W.elapsed, arriveAt: W.elapsed + Math.round(DAY_SECONDS * 0.25) });
+  logPush(W, `🚩 [${name}] ${to}(으)로 출진 (병력 ${sum(units).toLocaleString()}명)`, 'war');
+  return true;
+}
+
+function lossFracs(L) { return REALMS.map((_, i) => Math.min(0.97, Math.max(0, L * Math.max(0.1, 1.3 - 0.15 * i)))); }
+
+function reincarnate(W, pid, pname, byName) {
+  const cands = Object.keys(W.sects).filter(n => !W.sects[n].defeated && W.sects[n].owner === 'AI' && n !== byName);
+  if (!cands.length) { logPush(W, `💀 ${pname}은(는) 후계자로 돌아올 문파가 없어 관전자가 되었다`, 'war'); return; }
+  const n = cands[Math.floor(rnd() * cands.length)], t = W.sects[n];
+  t.owner = pid; t.ownerName = pname; t.color = W.colors[pid] || '#cccccc';
+  logPush(W, `🌀 ${pname}이(가) [${n}]의 후계자로 회귀했다!`, 'war');
+}
+
+function checkAbsorb(W, defName, attName) {
+  const s = W.sects[defName], att = W.sects[attName];
+  if (!s || !att || s.defeated || !s.leaderDead) return false;
+  const total = sum(s.counts);
+  if (total > 0.2 * s.peak) return false;
+  for (let i = 0; i < 9; i++) att.counts[i] += Math.floor(s.counts[i] * 0.5);
+  att.gold += Math.floor(s.gold * 0.5);
+  att.peak = Math.max(att.peak, sum(att.counts));
+  for (const id in W.nodes) if (W.nodes[id].owner === defName) W.nodes[id].owner = attName;
+  W.marches = W.marches.filter(m => m.sect !== defName);
+  const oldOwner = s.owner, oldName = s.ownerName;
+  s.counts = REALMS.map(() => 0); s.gold = 0; s.defeated = true;
+  logPush(W, `☠️ [${defName}] 멸문! [${attName}]이(가) 흡수했다`, 'war');
+  if (oldOwner !== 'AI') reincarnate(W, oldOwner, oldName, attName);
+  return true;
+}
+
+function destroyCoreSite(W, defName, attName, siteId) {
+  const site = W.nodes[siteId], def = W.sects[defName], att = W.sects[attName];
+  if (!site || !site.core || site.destroyed) return;
+  site.destroyed = true; site.owner = null; site.siege = null; site.garrison = REALMS.map(() => 0); site.fortLevel = 0;
+  logPush(W, `💥 [${attName}]이(가) [${defName}]의 핵심 거점 「${NODES[siteId].siteName || siteId}」을 파괴했다!`, 'war');
+  const remaining = CORE_SITE_IDS[defName].filter(id => !W.nodes[id].destroyed).length;
+  if (remaining === 0 && !def.defeated) {
+    def.defeated = true;
+    for (let i = 0; i < 9; i++) { att.counts[i] += Math.floor(def.counts[i] * 0.35); def.counts[i] = 0; }
+    att.gold += Math.floor(def.gold * 0.5);
+    for (const id in W.nodes) if (W.nodes[id].owner === defName && !W.nodes[id].core) W.nodes[id].owner = attName;
+    W.marches = W.marches.filter(m => m.sect !== defName);
+    def.gold = 0;
+    logPush(W, `☠️ [${defName}]의 3대 핵심 거점이 모두 무너졌다! 문파가 멸문했다.`, 'war');
+    if (def.owner !== 'AI') reincarnate(W, def.owner, def.ownerName, attName);
+  }
+}
+
+function resolveMarch(W, m) {
+  const att = W.sects[m.sect], day = W.d;
+  if (!att || att.defeated) return;
+  const home = () => { for (let i = 0; i < 9; i++) att.counts[i] += m.units[i]; if (m.specialPower && att.prodigy) att.prodigy.away = false; };
+  const to = m.to, node = W.nodes[to];
+  if (node.owner === m.sect) { home(); logPush(W, `[${m.sect}] 병력이 ${to}에 도착했지만 이미 아군 땅이라 복귀했다`, 'war'); return; }
+  const hq = !!SECTS[to] && !W.sects[to].defeated;
+  const core = !!NODES[to].core;
+  const owner = node.owner, dsect = owner ? W.sects[owner] : null;
+  const A = (power(m.units) + (m.specialPower || 0)) * atkMult(att) * (att.leaderDead ? 0.85 : 1);
+  const D = Math.max(1, defPowerOf(W, to, day));
+  const a = A / (A + D), win = A > D;
+  const noise = () => 0.9 + rnd() * 0.2;
+  let lA = 0.7 * (1 - a) * (win ? 1 : 1.3) * noise();
+  let lD = 0.7 * a * (win ? 1.3 : 1) * noise();
+  lA = Math.min(0.95, Math.max(0.02, lA)); lD = Math.min(0.95, Math.max(0.02, lD));
+  const fa = lossFracs(lA);
+  let killedA = 0, eliteA = 0;
+  for (let i = 0; i < 9; i++) {
+    const lost = Math.min(m.units[i], Math.round(m.units[i] * fa[i]));
+    killedA += lost; if (i >= 3) eliteA += lost;
+    att.counts[i] += m.units[i] - lost;
+  }
+  let killedD = 0, eliteD = 0;
+  if (dsect) {
+    const av = avail(dsect), fd = lossFracs(lD * (hq ? 1 : 0.3));
+    for (let i = 0; i < 9; i++) {
+      const lost = Math.min(dsect.counts[i], Math.round(av[i] * fd[i]));
+      dsect.counts[i] -= lost; killedD += lost; if (i >= 3) eliteD += lost;
+    }
+    fixOrgs(dsect);
+  }
+  if (node.garrison && node.garrison.some(v => v > 0)) {
+    const gf = lossFracs(lD * (core || hq ? 1 : 0.35));
+    for (let i = 0; i < 9; i++) node.garrison[i] = Math.max(0, node.garrison[i] - Math.round(node.garrison[i] * gf[i]));
+  }
+  fixOrgs(att);
+  const stat = `(아군 전사 ${killedA.toLocaleString()}${eliteA ? `, 그중 절정 이상 ${eliteA}` : ''}${dsect ? ` / 적 전사 ${killedD.toLocaleString()}${eliteD ? `, 그중 절정 이상 ${eliteD}` : ''}` : ''})`;
+  if (win) {
+    if (core) {
+      const siege = node.siege && node.siege.sect === att.name ? node.siege : { sect: att.name, progress: 0 };
+      siege.progress = Math.min(2, siege.progress + 1); node.siege = siege;
+      if (siege.progress >= 2) destroyCoreSite(W, NODES[to].sect, att.name, to);
+      else logPush(W, `⚔️ [${att.name}] ${to} 공략 성공! 핵심 거점 파괴 진척 ${siege.progress}/2 ${stat}`, 'war');
+    } else if (!hq) {
+      const siege = node.siege && node.siege.sect === att.name ? node.siege : { sect: att.name, progress: 0 };
+      siege.progress = Math.min(2, siege.progress + 1);
+      node.siege = siege;
+      if (siege.progress >= 2) {
+        node.owner = att.name; node.garrison = REALMS.map(() => 0); node.siege = null;
+        logPush(W, `🏴 [${att.name}] ${to} 최종 점령! 두 차례의 승리 끝에 영토를 확보했다 ${stat}`, 'war');
+      } else {
+        logPush(W, `⚔️ [${att.name}] ${to} 전투 승리! 포위 진척 ${siege.progress}/2 — 아직 점령하지 못했다 ${stat}`, 'war');
+      }
+    } else {
+      const siege = node.siege && node.siege.sect === att.name ? node.siege : { sect: att.name, progress: 0 };
+      siege.progress = Math.min(2, siege.progress + 1); node.siege = siege;
+      if (siege.progress >= 2) {
+        logPush(W, `⚔️ [${att.name}]이(가) [${to}] 본산 공략에 두 차례 승리했다 ${stat}`, 'war');
+        let chance = a > 0.67 ? 0.6 : 0.3;
+        chance /= 1 + (dsect.orgs['호위대'] || 0) / 20;
+        if (!dsect.leaderDead && rnd() < chance) {
+          dsect.leaderDead = true; dsect.leaderDeadDay = day;
+          logPush(W, `🩸 [${to}] 장문인이 전사했다!`, 'war');
+        }
+        node.siege = null;
+        checkAbsorb(W, to, att.name);
+      } else {
+        logPush(W, `⚔️ [${att.name}] 본산 공략 1/2 성공 — 문파의 최후 방어선이 버티고 있다 ${stat}`, 'war');
+      }
+    }
+  } else {
+    if (node.siege && node.siege.sect === att.name) {
+      node.siege.progress = Math.max(0, node.siege.progress - 1);
+      if (node.siege.progress === 0) node.siege = null;
+    }
+    logPush(W, `🛡️ [${att.name}] ${to} 공격 실패, 패퇴 ${stat}`, 'war');
+  }
+  if (m.specialPower && att.prodigy) att.prodigy.away = false;
+}
+
+function assassinate(W, name, targetName) {
+  const s = W.sects[name], t = W.sects[targetName];
+  if (!s || !t || t.defeated || targetName === name || t.leaderDead) return;
+  if ((s.orgs['암살대'] || 0) < 5 || W.d <= s.lastAssDay) return;
+  const p = assassinChance(s, t);
+  s.lastAssDay = W.d;
+  if (rnd() < p) {
+    t.leaderDead = true; t.leaderDeadDay = W.d;
+    for (let i = 0; i < 9; i++) t.counts[i] -= Math.floor(t.counts[i] * 0.03);
+    fixOrgs(t);
+    logPush(W, `🗡️ [${name}] 암살대가 [${targetName}] 장문인 암살에 성공했다!`, 'war');
+    checkAbsorb(W, targetName, name);
+  } else {
+    const lost = Math.ceil((s.orgs['암살대'] || 0) * 0.6);
+    s.orgs['암살대'] -= lost; s.counts[0] = Math.max(0, s.counts[0] - lost);
+    logPush(W, `🗡️ [${name}] 암살대가 [${targetName}] 암살에 실패하고 ${lost}명을 잃었다`, 'war');
+  }
+}
+
+function pickTarget(W, name) {
+  const mine = ownedNodes(W, name); let best = null;
+  for (const id in NODES) {
+    if (!visible(id, W.d) || W.nodes[id].owner === name || W.nodes[id].destroyed) continue;
+    if (!ADJ[id].some(a => mine.includes(a))) continue;
+    const p = defPowerOf(W, id, W.d);
+    if (!best || p < best.power) best = { id, power: p };
+  }
+  return best;
+}
+
+function applyCmd(W, pid, c) {
+  const name = Object.keys(W.sects).find(n => W.sects[n].owner === pid && !W.sects[n].defeated);
+  if (!name) return;
+  const s = W.sects[name];
+  switch (c.t) {
+    case 'recruit': {
+      const n = [10, 50, 100].includes(c.n) ? c.n : 0;
+      if (!n || s.gold < n * RECRUIT_COST) break;
+      s.gold -= n * RECRUIT_COST; s.counts[0] += n; break;
+    }
+    case 'train': {
+      const i = Number(c.i), want = Number(c.n);
+      if (!(i >= 0 && i <= 7) || ![1, 5, 20].includes(want)) break;
+      const real = Math.min(want, s.counts[i], Math.floor(s.gold / TRAIN_COST[i]));
+      if (real <= 0) break;
+      let ok = real; if (i >= 2) { ok = 0; for (let k = 0; k < real; k++) if (rnd() < 1 / 3) ok++; }
+      s.gold -= real * TRAIN_COST[i]; s.counts[i] -= ok; s.counts[i + 1] += ok;
+      if (i >= 2) logPush(W, `📘 [${name}] ${REALMS[i]} ${real}명 직접 지도 — ${ok ? ok + '명 성공' : '모두 실패'}`, 'sys');
+      else if (i + 1 >= 4 && ok) logPush(W, `📈 [${name}]에서 ${ok}명이 ${REALMS[i + 1]}에 올랐다`, 'sys');
+      break;
+    }
+    case 'academy': {
+      if (s.academy || s.gold < 1200) break;
+      // 수련원은 삼류·이류 제자 10명을 받아 3일 뒤 일류로 배출한다.
+      if (s.counts[0] + s.counts[1] < 10) break;
+      let need = 10;
+      for (const i of [0, 1]) { const n = Math.min(need, s.counts[i]); s.counts[i] -= n; need -= n; }
+      s.gold -= 1200; s.academy = { count: 10, days: 3 };
+      logPush(W, `🏯 [${name}] 10대제자 수련원에 제자 10명을 입관시켰다. 사흘 뒤 일류로 졸업한다.`, 'sys');
+      break;
+    }
+    case 'org': {
+      if (!ORG_NAMES.includes(c.o) || ![-10, -1, 1, 10].includes(c.d)) break;
+      const max = Math.floor(s.counts[0] * 0.8), cur = s.orgs[c.o] || 0, others = orgTotal(s) - cur;
+      s.orgs[c.o] = Math.max(0, Math.min(cur + c.d, max - others)); break;
+    }
+    case 'art': {
+      const i = Number(c.i);
+      if (!(i >= 0 && i <= 2) || s.arts[i] >= MAX_ART) break;
+      const cost = artCost(s, i);
+      if (s.gold < cost) break;
+      s.gold -= cost; s.arts[i]++;
+      logPush(W, `📜 [${name}] ${SECTS[name].arts[i].n} ${s.arts[i]}성 달성`, 'sys'); break;
+    }
+    case 'weapon': {
+      const nw = WEAPONS[s.weapon + 1];
+      if (!nw || s.gold < nw.cost) break;
+      s.gold -= nw.cost; s.weapon++;
+      logPush(W, `🗡️ [${name}] 무기고가 ${nw.g} 등급 「${nw.n}」(으)로 강화되었다`, 'sys'); break;
+    }
+    case 'march': {
+      if (!['mass', 'elite', 'all'].includes(c.mode)) break;
+      launch(W, name, c.to, c.mode); break;
+    }
+    case 'fort': {
+      const n = W.nodes[c.to], level = n && (n.fortLevel || 0), cost = 900 * (level + 1) * (level + 1);
+      if (!n || n.owner !== name || n.destroyed || level >= 3 || s.gold < cost) break;
+      s.gold -= cost; n.fortLevel = level + 1;
+      logPush(W, `🧱 [${name}] ${c.to}에 방어 거점 ${n.fortLevel}단계를 건설했다`, 'sys'); break;
+    }
+    case 'garrison': {
+      const n = W.nodes[c.to], i = Number(c.i), amount = Number(c.n);
+      if (!n || n.owner !== name || n.destroyed || !(i >= 0 && i <= 8) || ![1,10,100].includes(amount) || s.counts[i] < amount) break;
+      s.counts[i] -= amount; n.garrison = n.garrison || REALMS.map(() => 0); n.garrison[i] = (n.garrison[i] || 0) + amount;
+      logPush(W, `🛡️ [${name}] ${c.to}에 ${REALMS[i]} ${amount}명을 배치했다`, 'sys'); break;
+    }
+    case 'withdraw': {
+      const n = W.nodes[c.to], i = Number(c.i), amount = Number(c.n);
+      if (!n || n.owner !== name || !(i >= 0 && i <= 8) || ![1,10,100].includes(amount) || (n.garrison?.[i] || 0) < amount) break;
+      n.garrison[i] -= amount; s.counts[i] += amount; break;
+    }
+    case 'buyPill': {
+      const i = Number(c.i); if (!(i >= 2 && i <= 7) || s.gold < PILL_COST[i]) break;
+      s.gold -= PILL_COST[i]; s.pills = s.pills || {}; s.pills[i] = (s.pills[i] || 0) + 1; break;
+    }
+    case 'givePill': {
+      const i = Number(c.i); s.pills = s.pills || {};
+      if (!(i >= 2 && i <= 7) || !(s.pills[i] > 0) || s.counts[i] < 1) break;
+      s.pills[i]--; s.counts[i]--; s.counts[i + 1]++;
+      const m = (s.masters || []).find(x => x.id === c.mid && x.realm === i);
+      if (m) { m.realm = i + 1; m.pills = (m.pills || 0) + 1; logPush(W, `💊 [${name}] 「${m.alias}」 ${m.name}이(가) ${PILL_NAME[i]}을(를) 복용해 ${REALMS[i + 1]}에 올랐다!`, 'war'); }
+      else logPush(W, `💊 [${name}] ${PILL_NAME[i]} 복용 — 가장 강한 ${REALMS[i]} 무인이 ${REALMS[i + 1]}에 올랐다`, 'war');
+      break;
+    }
+    case 'kill': assassinate(W, name, c.target); break;
+  }
+}
+
+function aiAct(W, name) {
+  const s = W.sects[name];
+  if (s.defeated || s.owner !== 'AI') return;
+  // AI는 매일 전쟁보다 내정·방비를 우선한다.
+  let budget = Math.floor(s.gold * 0.45);
+  for (const i of [3, 2, 4, 1, 0]) {
+    const cost = TRAIN_COST[i], n = Math.min(6, s.counts[i], Math.floor(budget / cost));
+    if (n > 0) { const ok = i >= 2 ? Array.from({ length: n }).filter(() => rnd() < 1 / 3).length : n; s.counts[i] -= ok; s.counts[i + 1] += ok; s.gold -= n * cost; budget -= n * cost; }
+  }
+  const rec = Math.min(10, Math.floor(budget * 0.35 / RECRUIT_COST));
+  if (rec > 0) { s.counts[0] += rec; s.gold -= rec * RECRUIT_COST; }
+  const nw = WEAPONS[s.weapon + 1];
+  if (nw && s.gold >= nw.cost * 1.8 && rnd() < 0.35) { s.gold -= nw.cost; s.weapon++; }
+  if (rnd() < 0.35) {
+    const ai = Math.floor(rnd() * 3);
+    if (s.arts[ai] < MAX_ART) { const cost = artCost(s, ai); if (s.gold >= cost * 1.5) { s.gold -= cost; s.arts[ai]++; } }
+  }
+  const coreIds = CORE_SITE_IDS[name].filter(id => !W.nodes[id].destroyed);
+  // 본산 주변 방어 거점을 우선 강화한다.
+  if (coreIds.length && rnd() < 0.42) {
+    const target = coreIds.slice().sort((a,b) => (W.nodes[a].fortLevel||0) - (W.nodes[b].fortLevel||0))[0];
+    const level = W.nodes[target].fortLevel || 0, cost = 900 * (level + 1) * (level + 1);
+    if (level < 3 && s.gold >= cost) { s.gold -= cost; W.nodes[target].fortLevel = level + 1; }
+  }
+  // 전선이 위협받으면 병력을 보내 주둔시킨다.
+  const threatened = coreIds.find(id => W.nodes[id].siege && W.nodes[id].siege.progress > 0);
+  if (threatened && s.counts[0] >= 100 && rnd() < 0.7) {
+    const n = Math.min(100, s.counts[0]); s.counts[0] -= n; W.nodes[threatened].garrison[0] = (W.nodes[threatened].garrison[0] || 0) + n;
+  }
+  // AI의 공격 결정은 드물고, 전력 우위가 확실할 때만 실행한다.
+  if (W.marches.filter(m => m.sect === name).length < 1 && rnd() < 0.045) {
+    const t = pickTarget(W, name);
+    const coreUnderThreat = coreIds.some(id => W.nodes[id].siege && W.nodes[id].siege.progress > 0);
+    if (!coreUnderThreat && t && (power(makeUnits(s, 'all')) + prodigyPower(s)) * atkMult(s) >= t.power * 1.9) launch(W, name, t.id, 'all');
+  }
+}
+function applyDeficitAttrition(W, s) {
+  // 전체 인구에는 본대, 출정군, 주둔군이 포함된다. 조직 인원은 counts[0]에 이미 포함.
+  const pools = [{ units: s.counts, kind: 'main' }];
+  for (const id in W.nodes) {
+    const n = W.nodes[id];
+    if (n.owner === s.name && n.garrison) pools.push({ units: n.garrison, kind: 'garrison', id });
+  }
+  for (const m of W.marches) if (m.sect === s.name) pools.push({ units: m.units, kind: 'march', id: m.id });
+  const total = pools.reduce((a, p) => a + sum(p.units), 0);
+  let leaving = Math.min(total, Math.ceil(total * 0.03));
+  const initial = leaving;
+  // 하급 무인부터 이탈한다. 본대가 부족하면 주둔군과 출정군에서도 빠진다.
+  for (let rank = 0; rank < REALMS.length && leaving > 0; rank++) {
+    for (const pool of pools) {
+      const take = Math.min(leaving, pool.units[rank] || 0);
+      if (take > 0) { pool.units[rank] -= take; leaving -= take; }
+      if (!leaving) break;
+    }
+  }
+  fixOrgs(s);
+  logPush(W, `📉 [${s.name}] 재정 적자: 문파 인원 ${num(initial)}명(3%)이 이탈했다.`, 'war');
+}
+
+function dailyUpdate(W, day) {
+  W.d = day;
+  const herbBy = {};
+  for (const id in W.nodes) if (NODES[id].type === 'herb' && W.nodes[id].owner) herbBy[W.nodes[id].owner] = (herbBy[W.nodes[id].owner] || 0) + 1;
+  for (const name in W.sects) {
+    const s = W.sects[name];
+    if (s.defeated) continue;
+    // 하루 정산: 총수입을 받고 전체 무인 유지비를 실제로 차감한다.
+    s.gold += grossOf(W, s) - upkeepOf(s);
+    if (s.gold < 0) applyDeficitAttrition(W, s);
+    if (s.leaderDead && day - s.leaderDeadDay >= 3) { s.leaderDead = false; logPush(W, `👑 [${name}] 새 장문인을 추대했다`, 'sys'); }
+    if (s.academy) {
+      s.academy.days--;
+      if (s.academy.days <= 0) {
+        s.counts[2] += s.academy.count;
+        logPush(W, `🎓 [${name}] 10대제자 수련원에서 제자 ${s.academy.count}명이 일류 무인으로 졸업했다!`, 'war');
+        s.academy = null;
+      }
+    }
+    if (s.prodigy && s.prodigy.realm < 8 && rnd() < 0.5) {
+      s.prodigy.realm++;
+      logPush(W, `🌠 [${name}]의 천외기인 「${s.prodigy.name}」이(가) 기연을 깨우쳐 ${REALMS[s.prodigy.realm]}에 도달했다!`, 'war');
+    }
+    const mult = (s.leaderDead ? 0.5 : 1) * (SECTS[name].talent || 1) * ((SECTS[name].traits && SECTS[name].traits.stats.promote) || 1) * (1 + Math.min(0.5, (s.orgs['제자단'] || 0) / 200) + 0.05 * (herbBy[name] || 0));
+    for (let i = 7; i >= 0; i--) {
+      const highRealmGate = i >= 4 ? 0.08 * (SECTS[name].highTalent || 1) : 1;
+      const exact = s.counts[i] * PROMOTE[i] * mult * highRealmGate;
+      let n = Math.floor(exact);
+      if (rnd() < exact - n) n++;
+      n = Math.min(n, s.counts[i]);
+      s.counts[i] -= n; s.counts[i + 1] += n;
+      if (n > 0 && i + 1 >= 5) logPush(W, `🌟 [${name}]에서 ${n}명이 ${REALMS[i + 1]}에 올랐다`, 'sys');
+    }
+    s.counts[0] += Math.max(1, Math.round((3 + SECTS[name].base[0] * 0.004) * ((SECTS[name].traits && SECTS[name].traits.stats.recruit) || 1)));
+    fixOrgs(s);
+    s.peak = Math.max(s.peak, sum(s.counts));
+  }
+  for (const name in W.sects) aiAct(W, name);
+  if (day > 1 && day % 30 === 0) runMartialTournament(W, day);
+}
+
+function runMartialTournament(W, day) {
+  const contenders = Object.values(W.sects).filter(s => !s.defeated && sum(s.counts) > 0);
+  if (contenders.length < 2) return;
+  const ranked = contenders.map(s => ({s, score: Math.max(1, sectPower(s, s.counts) * (0.85 + rnd()*0.3))}))
+    .sort((a,b) => b.score-a.score);
+  const winner = ranked[0].s;
+  const reward = 2500 + Math.min(15000, Math.floor(power(winner.counts) * 0.015));
+  winner.gold += reward;
+  winner.renown = (winner.renown || 0) + 10;
+  W.tournaments = W.tournaments || [];
+  W.tournaments.unshift({day, winner:winner.name, ownerName:winner.ownerName, reward, top3:ranked.slice(0,3).map(x=>x.s.name)});
+  W.tournaments = W.tournaments.slice(0,8);
+  logPush(W, `🏆 제${Math.ceil(day/30)}회 무림대회 우승: [${winner.name}] ${winner.ownerName} · 상금 ${num(reward)}금`, 'war');
+}
+
+function checkEnd(W) {
+  const alive = Object.keys(W.sects).filter(n => !W.sects[n].defeated);
+  if (alive.length === 1) {
+    const w = W.sects[alive[0]];
+    W.winner = { owner: w.owner, ownerName: w.ownerName, sects: alive };
+  }
+}
+
+function rankOf(s) { const p = power(s.counts); let i = 0; RANKS.forEach((r, k) => { if (p >= r[0]) i = k; }); return { i, label: RANKS[i][1], next: RANKS[i + 1], p }; }
+const SUR = ['남궁','제갈','모용','독고','황보','하후','단목','사마','연','백','유','한','진','소','청','천','위','곽'];
+const GIV = ['천','운','현','진','태','검','무','광','혁','도','린','준','성','하','량','태소','청휘','무진','백야','한서'];
+const ALA = ['천하무적','신검','벽력','혈수','광풍','청영','철권','금강','태허','현천','적염','백운','야차','천외','신룡','무상','일월','구천','비검','파천'];
+const ALB = ['검왕','도황','권제','장군','검성','마존','신수','일검','창신','선인','패왕','검선','천존','귀검','제일검'];
+const pickA = a => a[Math.floor(rnd() * a.length)];
+function masterStats(m, s) {
+  const r = m.realm, k = 1 + 0.12 * (m.pills || 0), st = SECTS[s.name].traits.stats;
+  return { hp: Math.round(POWER[r] * 7 * m.roll * k), qi: Math.round([0,0,0,0,0,0,3,6,12][r] * m.roll * k * 10) / 10, atk: Math.round(POWER[r] * 1.2 * m.roll * k * st.atk) };
+}
+function newMaster(W, s, r) {
+  const used = new Set(); for (const n in W.sects) (W.sects[n].masters || []).forEach(m => used.add(m.alias));
+  let al; for (let k = 0; k < 30; k++) { al = pickA(ALA) + pickA(ALB); if (!used.has(al)) break; }
+  return { id: 'm' + Math.floor(rnd() * 1e9).toString(36), name: pickA(SUR) + pickA(GIV), alias: al, realm: r, roll: +(0.85 + rnd() * 0.3).toFixed(2), pills: 0 };
+}
+// 현경 이상 인원수(counts)와 이름 있는 고수 명단을 맞춘다. 출정·주둔 중인 인원도 포함해서 센다.
+function syncMasters(W, s) {
+  if (s.defeated) { s.masters = []; return; }
+  const M = s.masters = s.masters || [], tot = REALMS.map((_, i) => s.counts[i]);
+  for (const m of W.marches) if (m.sect === s.name) m.units.forEach((u, i) => tot[i] += u);
+  for (const id in W.nodes) { const n = W.nodes[id]; if (n.owner === s.name && n.garrison) n.garrison.forEach((u, i) => tot[i] += u || 0); }
+  const st = m => masterStats(m, s).atk;
+  for (let r = 8; r >= 6; r--) {
+    const L = M.filter(m => m.realm === r);
+    while (L.length < tot[r]) {
+      const low = r > 6 ? M.filter(m => m.realm === r - 1) : [];
+      if (low.length > tot[r - 1]) { const m = low.sort((a, b) => st(b) - st(a))[0]; m.realm = r; L.push(m); logPush(W, `🌟 [${s.name}] 「${m.alias}」 ${m.name}이(가) ${REALMS[r]}에 올랐다!`, 'war'); }
+      else { const m = newMaster(W, s, r); M.push(m); L.push(m); logPush(W, `🌟 [${s.name}] ${m.name}이(가) ${REALMS[r]}에 올라 「${m.alias}」(이)라는 별호를 얻었다!`, 'war'); }
+    }
+    while (L.length > tot[r]) { L.sort((a, b) => st(a) - st(b)); const m = L.shift(); M.splice(M.indexOf(m), 1); logPush(W, `⚰️ [${s.name}] 「${m.alias}」 ${m.name}이(가) 전사했다`, 'war'); }
+  }
+}
+/*LOGIC_END*/
+
+/* =========================================================
+   화면 / 네트워크
+   ========================================================= */
+let players = [];
+const ui = { tab: 'map', node: null, toast: '', toastAt: 0, vb: [0, 0, MAPW, MAPH] };
+let lastTick = null, cmdCounter = 0, lastHtml = '';
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const num = n => Math.round(n).toLocaleString();
+const get = k => Playroom.getState(k);
+
+function toast(t) { ui.toast = t; ui.toastAt = Date.now(); }
+
+async function boot() {
+  try {
+    await Playroom.insertCoin({
+      maxPlayersPerRoom: MAX_PLAYERS,
+      defaultPlayerStates: { sect: '' },
+    });
+  } catch (e) {
+    $root.innerHTML = '<div class="panel">접속 실패: ' + esc(e.message || e) + '</div>';
+    return;
+  }
+  window.__ready = true;
+  Playroom.onPlayerJoin(player => {
+    players.push(player);
+    player.onQuit(() => { players = players.filter(p => p !== player); });
+  });
+  if (Playroom.isHost()) {
+    if (!get('phase')) Playroom.setState('phase', 'select', true);
+    if (!get('speed')) Playroom.setState('speed', 1, true);
+    if (get('elapsed') == null) Playroom.setState('elapsed', 0, true);
+  }
+  setInterval(render, 500);
+  animate();
+  setInterval(hostTick, 1000);
+  render();
+}
+const $root = appEl;
+
+/* ---------- 방장: 시간 + 명령 처리 + 일일 갱신 ---------- */
+function loadWorld() {
+  const sects = get('sects'), nodes = get('nodes');
+  if (!sects || !nodes) return null;
+  return { sects: clone(sects), nodes: clone(nodes), marches: clone(get('marches') || []), log: clone(get('log') || []), tournaments: clone(get('tournaments') || []),
+           colors: get('colors') || {}, nextId: get('nextId') || 0, elapsed: 0, d: 1 };
+}
+
+function hostTick() {
+  if (!Playroom.isHost() || get('phase') !== 'play') { lastTick = null; return; }
+  const now = Date.now();
+  if (lastTick === null) { lastTick = now; return; }
+  const dt = Math.min(300, (now - lastTick) / 1000); lastTick = now;
+  const elapsed = (get('elapsed') || 0) + dt * (get('speed') || 1);
+  Playroom.setState('elapsed', elapsed, true);
+
+  const W = loadWorld(); if (!W) return;
+  ONLINE = new Set(players.map(p => p.id));
+  W.elapsed = elapsed; W.d = Math.floor(elapsed / DAY_SECONDS) + 1;
+  const before = JSON.stringify([W.sects, W.nodes, W.marches, W.log, W.nextId, W.tournaments]);
+
+  // 1) 플레이어 명령
+  const proc = clone(get('proc') || {}); let procChanged = false;
+  for (const p of players) {
+    const q = p.getState('cmds') || [], last = proc[p.id] || 0;
+    for (const c of q) {
+      if (c.seq > (proc[p.id] || 0)) { applyCmd(W, p.id, c); proc[p.id] = c.seq; procChanged = true; }
+    }
+  }
+  if (procChanged) Playroom.setState('proc', proc, true);
+
+  // 2) 도착한 병력 전투
+  const due = W.marches.filter(m => m.arriveAt <= elapsed);
+  W.marches = W.marches.filter(m => m.arriveAt > elapsed);
+  for (const m of due) resolveMarch(W, m);
+
+  // 3) 하루가 지났으면 일일 갱신
+  const realDay = W.d;
+  let done = get('processedDay') || 1; const startDone = done;
+  while (done < realDay) { done++; dailyUpdate(W, done); }
+  W.d = realDay;
+  if (done !== startDone) Playroom.setState('processedDay', done, true);
+
+  for (const n in W.sects) syncMasters(W, W.sects[n]);
+  checkEnd(W);
+
+  if (JSON.stringify([W.sects, W.nodes, W.marches, W.log, W.nextId, W.tournaments]) !== before) {
+    Playroom.setState('sects', W.sects, true);
+    Playroom.setState('nodes', W.nodes, true);
+    Playroom.setState('marches', W.marches, true);
+    Playroom.setState('log', W.log, true);
+    Playroom.setState('nextId', W.nextId, true);
+    Playroom.setState('tournaments', W.tournaments || [], true);
+  }
+  if (W.winner) { Playroom.setState('winner', W.winner, true); Playroom.setState('phase', 'end', true); }
+}
+
+/* ---------- 행동 ---------- */
+function pickSect(name) {
+  const takenBy = players.find(p => p.getState('sect') === name);
+  if (takenBy && takenBy.id !== Playroom.myPlayer().id) return;
+  Playroom.myPlayer().setState('sect', name, true);
+}
+
+function startGame() {
+  if (!Playroom.isHost()) return;
+  const picks = {};
+  for (const name in SECTS) {
+    const o = players.find(p => p.getState('sect') === name);
+    if (o) picks[name] = { id: o.id, name: o.getProfile().name };
+  }
+  const W = makeWorld(picks);
+  logPush(W, '🔥 천하쟁패가 시작되었다! 각 문파의 본산과 핵심 거점 2곳, 총 3곳을 모두 파괴해야 멸문한다.', 'sys');
+  const proc = {};
+  for (const p of players) { const q = p.getState('cmds') || []; proc[p.id] = q.length ? q[q.length - 1].seq || 0 : 0; }
+  Playroom.setState('proc', proc, true);
+  Playroom.setState('sects', W.sects, true);
+  Playroom.setState('nodes', W.nodes, true);
+  Playroom.setState('marches', [], true);
+  Playroom.setState('log', W.log, true);
+  Playroom.setState('colors', W.colors, true);
+  Playroom.setState('nextId', 0, true);
+  Playroom.setState('tournaments', [], true);
+  Playroom.setState('processedDay', 1, true);
+  Playroom.setState('elapsed', 0, true);
+  Playroom.setState('winner', null, true);
+  Playroom.setState('phase', 'play', true);
+}
+
+function send(c) {
+  const me = Playroom.myPlayer();
+  const q = (me.getState('cmds') || []).slice(-14);
+  q.push(Object.assign({}, c, { seq: Date.now() * 100 + (cmdCounter++ % 100) }));
+  me.setState('cmds', q, true);
+  toast('명령을 보냈어요');
+}
+
+$root.addEventListener('click', e => {
+  const el = e.target.closest('[data-act]');
+  if (!el || Date.now() < (ui.noClickUntil || 0)) return;
+  const d = el.dataset;
+  switch (d.act) {
+    case 'tab': ui.tab = d.tab; break;
+    case 'zoom': if (d.f === '0') ui.vb = [0, 0, MAPW, MAPH]; else zoomAt(Number(d.f), .5, .5); break;
+    case 'home': { const W = readWorld(), m = W && mySect(W); if (m) { const N = NODES[m.name]; ui.vb = [N.x - 450, N.y - 300, 900, 600]; clampVB(); } break; }
+    case 'buyPill': send({ t: 'buyPill', i: Number(d.i) }); break;
+    case 'givePill': send({ t: 'givePill', i: Number(d.i), mid: d.m || '' }); break;
+    case 'node': ui.node = d.id; break;
+    case 'pick': pickSect(d.name); break;
+    case 'start': startGame(); break;
+    case 'speed': if (Playroom.isHost()) Playroom.setState('speed', Number(d.v), true); break;
+    case 'recruit': send({ t: 'recruit', n: Number(d.n) }); break;
+    case 'train': send({ t: 'train', i: Number(d.i), n: Number(d.n) }); break;
+    case 'academy': send({ t: 'academy' }); break;
+    case 'org': send({ t: 'org', o: d.o, d: Number(d.d) }); break;
+    case 'art': send({ t: 'art', i: Number(d.i) }); break;
+    case 'weapon': send({ t: 'weapon' }); break;
+    case 'march': send({ t: 'march', to: d.to, mode: d.mode }); break;
+    case 'fort': send({ t: 'fort', to: d.to }); break;
+    case 'garrison': send({ t: 'garrison', to: d.to, i: Number(d.i), n: Number(d.n) }); break;
+    case 'withdraw': send({ t: 'withdraw', to: d.to, i: Number(d.i), n: Number(d.n) }); break;
+    case 'kill': send({ t: 'kill', target: d.target }); break;
+  }
+  render();
+});
+
+/* ---------- 화면 그리기 ---------- */
+window.addEventListener('pointerdown', () => { ui.down = true; }, true);
+window.addEventListener('pointerup', () => { setTimeout(() => { ui.down = false; }, 60); }, true);
+window.addEventListener('pointercancel', () => { ui.down = false; }, true);
+function render() {
+  if (ui.down) return;   // 버튼을 누르는 중에는 화면을 다시 그리지 않는다(클릭 씹힘 방지)
+  ONLINE = new Set(players.map(p => p.id));
+  const phase = get('phase');
+  let html;
+  try { html = phase === 'play' ? renderPlay() : phase === 'end' ? renderEnd() : renderSelect(); }
+  catch (e) { html = '<div class="panel">화면 오류: ' + esc(e.message) + '</div>'; }
+  if (ui.toast && Date.now() - ui.toastAt < 2000) html += `<div class="toast">${esc(ui.toast)}</div>`;
+  if (html !== lastHtml) { $root.innerHTML = html; lastHtml = html; }
+}
+
+function renderSelect() {
+  const me = Playroom.myPlayer(), host = Playroom.isHost();
+  const allPicked = players.length > 0 && players.every(p => p.getState('sect'));
+  const mkCards = names => names.map(name => {
+    const owner = players.find(p => p.getState('sect') === name);
+    const mine = owner && owner.id === me.id;
+    const cls = 'card' + (mine ? ' mine' : '') + (owner && !mine ? ' taken' : '');
+    const arts = SECTS[name].arts.map(a => `${a.n}(${a.k})`).join(', ');
+    const tr = SECTS[name].traits;
+    const traitHtml = tr ? `<div class="dim" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px;text-align:left"><div><b style="color:#86c99b">장점 ${tr.pros.length}</b>${tr.pros.map(x=>`<div>＋ ${x}</div>`).join('')}</div><div><b style="color:#d98a7e">단점 ${tr.cons.length}</b>${tr.cons.map(x=>`<div>－ ${x}</div>`).join('')}</div></div>` : '';
+    return `<div class="${cls}" data-act="pick" data-name="${name}">
+      <b>${name}</b><div class="dim">${SECTS[name].desc}</div>
+      <div class="dim" style="margin-top:4px">고유 무공: ${arts}</div>${traitHtml}
+      <div style="margin-top:6px">${owner ? '선택: ' + esc(owner.getProfile().name) : '<span class="dim">비어 있음 (선택 안 되면 AI)</span>'}</div></div>`;
+  }).join('');
+  const cards = mkCards(Object.keys(SECTS).filter(n => !SECTS[n].house)), hCards = mkCards(Object.keys(SECTS).filter(n => SECTS[n].house));
+  const list = players.map(p => `<div>${esc(p.getProfile().name)}${p.id === me.id ? '<span class="tag me">나</span>' : ''} — ${p.getState('sect') || '<span class="dim">아직 선택 안 함</span>'}</div>`).join('');
+  return `
+    <div class="panel"><h1>⚔️ 강호대전: 천하쟁패</h1><div class="dim">문파를 고르세요. 아무도 안 고른 문파는 AI가 운영합니다. 각 문파의 핵심 거점 3곳을 모두 파괴하면 멸문합니다.</div></div>
+    <div class="panel"><h3>구파일방 및 독립 중소 문파</h3><div class="dim">중소 문파도 AI가 독립적으로 영토를 지키고 확장합니다.</div><div class="grid">${cards}</div></div>
+    <div class="panel"><h3>🏰 오대세가</h3><div class="grid">${hCards}</div></div>
+    <div class="panel"><h3>접속자 (${players.length}/${MAX_PLAYERS})</h3>${list}
+      <div style="margin-top:10px">${host
+        ? `<button data-act="start" ${allPicked ? '' : 'disabled'}>게임 시작</button> <span class="dim">${allPicked ? '' : '모든 접속자가 문파를 골라야 시작할 수 있어요'}</span>`
+        : '<span class="dim">방장이 게임을 시작할 때까지 기다려 주세요</span>'}</div></div>`;
+}
+
+function renderEnd() {
+  const w = get('winner');
+  return `<div class="panel"><h1>🏆 천하통일!</h1>
+    <div style="font-size:18px">${w ? esc(w.ownerName) + ' — ' + w.sects.map(esc).join(', ') : ''}</div>
+    <div class="dim" style="margin-top:8px">새 게임을 하려면 방을 새로 만들어 주세요.</div></div>`;
+}
+
+function readWorld() {
+  const sects = get('sects'), nodes = get('nodes');
+  if (!sects || !nodes) return null;
+  const elapsed = get('elapsed') || 0;
+  return { sects, nodes, marches: get('marches') || [], log: get('log') || [], tournaments: get('tournaments') || [], elapsed, d: Math.floor(elapsed / DAY_SECONDS) + 1 };
+}
+function mySect(W) {
+  const id = Playroom.myPlayer().id;
+  const n = Object.keys(W.sects).find(k => W.sects[k].owner === id && !W.sects[k].defeated);
+  return n ? W.sects[n] : null;
+}
+function fuzz(v, key) {
+  let h = 0; for (const ch of String(key)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const x = v * (0.75 + (h % 50) / 100);
+  const p = Math.pow(10, Math.max(0, String(Math.floor(x)).length - 2));
+  return '약 ' + (Math.round(x / p) * p).toLocaleString();
+}
+const btn = (attrs, label, dis) => `<button class="sub" ${attrs} ${dis ? 'disabled' : ''}>${label}</button>`;
+
+function renderPlay() {
+  const W = readWorld();
+  if (!W) return '<div class="panel">세계를 불러오는 중...</div>';
+  const me = mySect(W), speed = get('speed') || 1, host = Playroom.isHost();
+  const inDay = W.elapsed % DAY_SECONDS, left = DAY_SECONDS - inDay;
+  const tleft = String(Math.floor(left / 60)).padStart(2, '0') + ':' + String(Math.floor(left % 60)).padStart(2, '0');
+  const speedBtns = host ? `<div class="row"><span class="dim">시간 배속:</span>${[1, 4, 15, 60, 900].map(v => `<button class="sub ${speed === v ? 'on' : ''}" data-act="speed" data-v="${v}">×${v}</button>`).join('')}<span class="dim">(×1 = 하루 15분)</span></div>` : '';
+
+  const head = `<div class="panel top">
+    <div><h2 style="margin:0">⚔️ 강호대전</h2><div class="dim">${me ? `내 문파: <b class="gold">${me.name}</b> <span class="tag me">${rankOf(me).label}</span>${me.leaderDead ? ' <span class="red">(문주 전사 — 새 문주 추대 중)</span>' : ''}` : '문파 없음 (관전 중)'}</div></div>
+    <div>${me ? `💰 금 <b class="gold">${num(me.gold)}</b> <span class="dim">(수입 ${num(grossOf(W, me))} − 유지비 ${num(upkeepOf(me))} = </span><b class="${incomeOf(W, me) < 0 ? 'red' : 'green'}">${incomeOf(W, me) > 0 ? '+' : ''}${num(incomeOf(W, me))}</b><span class="dim">/일)</span>` : ''}</div>
+    <div style="min-width:220px"><b>${W.d}일차</b> <span class="dim">다음 날까지 ${tleft}</span><div class="bar"><div style="width:${(inDay / DAY_SECONDS) * 100}%"></div></div></div></div>
+    ${speedBtns ? `<div class="panel">${speedBtns}</div>` : ''}`;
+
+  const tabs = [['map', '🗺️ 강호 지도'], ['sect', '🏯 문파·육성'], ['org', '👥 조직'], ['arts', '📜 무공·무기'], ['pill', '💊 영단·고수'], ['world', '🌏 천하 형세']];
+  const tabBar = `<div class="panel row">${tabs.map(([k, l]) => `<button class="sub ${ui.tab === k ? 'on' : ''}" data-act="tab" data-tab="${k}">${l}</button>`).join('')}</div>`;
+
+  let body = '';
+  if (ui.tab === 'map') body = tabMap(W, me);
+  else if (!me) body = '<div class="panel">문파가 없어서 관전만 할 수 있어요. 지도와 천하 형세 탭을 봐주세요.</div>';
+  else if (ui.tab === 'sect') body = financePanel(W, me) + tabSect(W, me);
+  else if (ui.tab === 'org') body = tabOrg(W, me);
+  else if (ui.tab === 'arts') body = tabArts(W, me);
+  else if (ui.tab === 'pill') body = tabPill(W, me);
+  if (ui.tab === 'world') body = tabWorld(W, me);
+
+  const log = W.log.slice(-14).reverse().map(l => `<div>[${l.d}일] ${esc(l.t)}</div>`).join('');
+  return head + tabBar + body + `<div class="panel log"><h3>📰 강호 소식</h3>${log || '<div class="dim">아직 소식이 없습니다</div>'}</div>`;
+}
+
+/* ----- 지도 ----- */
+const SEA = 'M1670 0 C1720 200 1650 420 1700 620 S1650 1000 1710 1200 L1800 1200 L1800 0Z';
+const RIVERS = { rv0: 'M0 400 C200 360 380 470 600 420 S900 350 1130 390 S1500 520 1690 640', rv1: 'M0 1010 C200 960 420 1060 640 990 S1020 930 1250 1020 S1560 1070 1700 990', sea: 'M1750 30 C1780 260 1730 480 1760 700 S1730 1000 1765 1170' };
+const SHIPS = [['rv0',.011,0,1],['rv0',-.008,.5,1],['rv0',.014,.8,1],['rv1',.01,.2,1],['rv1',-.012,.6,1],['rv1',.009,.9,1],['sea',.007,.1,1.7],['sea',-.006,.6,1.5]];
+let TERRAIN = null;
+function terrain() {
+  if (TERRAIN) return TERRAIN;
+  let s = 7; const r = () => (s = (s * 16807) % 2147483647) / 2147483647, far = (x, y, d) => Object.values(NODES).every(N => Math.hypot(N.x - x, N.y - y) > d);
+  let h = '';
+  for (let i = 0; i < 90; i++) {
+    const x = r() * 1620 + 30, y = r() * 1120 + 40, k = r(), sc = (0.7 + r() * 0.9).toFixed(2);
+    if (!far(x, y, 100)) continue;
+    h += k < .5 ? `<g transform="translate(${x.toFixed(0)} ${y.toFixed(0)}) scale(${sc})"><path d="M-24 12 L-7 -20 L4 -5 L13 -24 L30 12Z" fill="#5c5948" opacity=".78"/><path d="M-7 -20 L-1 -8 L-12 -8Z M13 -24 L18 -12 L8 -12Z" fill="#e5d8b8" opacity=".85"/></g>`
+      : `<g transform="translate(${x.toFixed(0)} ${y.toFixed(0)}) scale(${sc})" opacity=".7"><circle cx="-8" cy="2" r="8" fill="#586348"/><circle cx="6" cy="-2" r="9" fill="#68704d"/><circle cx="0" cy="8" r="7" fill="#4b573d"/></g>`;
+  }
+  return TERRAIN = h;
+}
+function animate() {
+  const now = Date.now() / 1000;
+  document.querySelectorAll('[data-ship]').forEach(g => {
+    const p = document.getElementById(g.dataset.ship); if (!p) return;
+    const sp = +g.dataset.sp, L = p.getTotalLength(); let u = (((now * Math.abs(sp) + +g.dataset.off) % 1) + 1) % 1; if (sp < 0) u = 1 - u;
+    const q = p.getPointAtLength(u * L), q2 = p.getPointAtLength(Math.min(L, u * L + 3)); let a = Math.atan2(q2.y - q.y, q2.x - q.x) * 180 / Math.PI; if (sp < 0) a += 180;
+    a = ((a + 180) % 360 + 360) % 360 - 180; const sc = +g.dataset.sc, flip = Math.abs(a) > 90;
+    g.setAttribute('transform', `translate(${q.x.toFixed(1)} ${(q.y + Math.sin(now * 2 + +g.dataset.off * 9) * 1.5).toFixed(1)}) rotate(${a.toFixed(1)}) scale(${sc} ${flip ? -sc : sc})`);
+  });
+  document.querySelectorAll('[data-cloud]').forEach(g => {
+    const x = (((now * +g.dataset.sp + +g.dataset.off) % 1) + 1) % 1 * (MAPW + 600) - 300;
+    g.setAttribute('transform', `translate(${x.toFixed(1)} ${g.dataset.y})`);
+  });
+  requestAnimationFrame(animate);
+}
+function clampVB() { const v = ui.vb; v[2] = Math.min(MAPW, Math.max(450, v[2])); v[3] = v[2] * MAPH / MAPW; v[0] = Math.min(MAPW - v[2], Math.max(0, v[0])); v[1] = Math.min(MAPH - v[3], Math.max(0, v[1])); }
+function applyVB() { const s = document.querySelector('svg.wm'); if (s) s.setAttribute('viewBox', ui.vb.map(Math.round).join(' ')); }
+function zoomAt(f, cx, cy) { const v = ui.vb, nw = v[2] * f; v[0] += (v[2] - nw) * cx; v[1] += (v[3] - nw * MAPH / MAPW) * cy; v[2] = nw; clampVB(); applyVB(); }
+let drag = null;
+$root.addEventListener('wheel', e => { const s = e.target.closest && e.target.closest('svg.wm'); if (!s) return; e.preventDefault(); const r = s.getBoundingClientRect(); zoomAt(e.deltaY < 0 ? 0.85 : 1.18, (e.clientX - r.left) / r.width, (e.clientY - r.top) / r.height); }, { passive: false });
+$root.addEventListener('pointerdown', e => { const s = e.target.closest('svg.wm'); if (!s || e.button > 0) return; drag = { x: e.clientX, y: e.clientY, vb: ui.vb.slice(), w: s.getBoundingClientRect().width, moved: false }; });
+window.addEventListener('pointermove', e => { if (!drag) return; const dx = e.clientX - drag.x, dy = e.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 6) drag.moved = true; if (!drag.moved) return; const k = drag.vb[2] / drag.w; ui.vb = [drag.vb[0] - dx * k, drag.vb[1] - dy * k, drag.vb[2], drag.vb[3]]; clampVB(); applyVB(); });
+window.addEventListener('pointerup', () => { if (drag && drag.moved) ui.noClickUntil = Date.now() + 250; drag = null; });
+
+function tabMap(W, me) {
+  const el = W.elapsed, day = W.d, vb = ui.vb.map(Math.round).join(' ');
+  const myNodes = me ? ownedNodes(W, me.name) : [];
+  const attackable = new Set();
+  if (me) for (const id in NODES) { if (!visible(id, day) || W.nodes[id].owner === me.name) continue; if (ADJ[id].some(a => myNodes.includes(a))) attackable.add(id); }
+  let svg = `<svg class="wm" viewBox="${vb}" role="img" aria-label="강호 지도" style="width:100%;height:auto;display:block;touch-action:none;cursor:grab;background:#a99a70;border-radius:12px;border:1px solid #b69a61;box-shadow:0 16px 40px #000b">
+    <defs>
+      <linearGradient id="land" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#c8b98e"/><stop offset=".48" stop-color="#a99a70"/><stop offset="1" stop-color="#807b5b"/></linearGradient>
+      <linearGradient id="seaG" x1="0" x2="1"><stop offset="0" stop-color="#2f6070"/><stop offset="1" stop-color="#0f2a37"/></linearGradient>
+      <pattern id="grain" width="40" height="40" patternUnits="userSpaceOnUse"><path d="M0 10 Q10 4 20 10 T40 10 M-10 30 Q0 24 10 30 T30 30" fill="none" stroke="#5b4328" stroke-opacity=".13"/></pattern>
+    </defs>
+    <rect width="${MAPW}" height="${MAPH}" fill="url(#land)"/><rect width="${MAPW}" height="${MAPH}" fill="url(#grain)"/>
+    ${terrain()}`;
+  for (const k of ['rv0', 'rv1']) svg += `<path d="${RIVERS[k]}" fill="none" stroke="#9cc3c0" stroke-opacity=".25" stroke-width="26" stroke-linecap="round"/><path id="${k}" d="${RIVERS[k]}" fill="none" stroke="#557f82" stroke-width="12" stroke-linecap="round"/><path d="${RIVERS[k]}" fill="none" stroke="#d4e0cb" stroke-opacity=".55" stroke-width="2.5" stroke-dasharray="14 18"/>`;
+  svg += `<path d="${SEA}" fill="url(#seaG)"/><path d="${SEA.split(' L')[0]}" fill="none" stroke="#cfe3d8" stroke-opacity=".4" stroke-width="3"/><path id="sea" d="${RIVERS.sea}" fill="none" stroke="none"/>
+    <text x="1745" y="1180" text-anchor="middle" font-size="15" fill="#bcd7d8" opacity=".7">東海</text><text x="40" y="44" fill="#e3cf9f" font-size="22" letter-spacing="6">강 호 전 도</text>
+    <g transform="translate(1600 110)" opacity=".85"><circle r="34" fill="none" stroke="#d5bd82" stroke-width="1.5"/><path d="M0 -30 L6 -4 0 0 -6 -4z M0 30 L6 4 0 0 -6 4z M-30 0 L-4 -6 0 0 -4 6z M30 0 L4 -6 0 0 4 6z" fill="#d5bd82"/><text y="-42" text-anchor="middle" fill="#e5d4a9" font-size="13">北</text></g>`;
+  for (const n in W.sects) { const s = W.sects[n]; if (s.defeated) continue; const N = NODES[n]; svg += `<circle cx="${N.x}" cy="${N.y}" r="${165 + rankOf(s).i * 10}" fill="${s.color}" fill-opacity=".11" stroke="${s.color}" stroke-opacity=".42" stroke-width="2" stroke-dasharray="10 8"/>`; }
+  for (const [a, b] of EDGES) {
+    if (!visible(a, day) || !visible(b, day)) continue;
+    const A = NODES[a], B = NODES[b], dx = B.x - A.x, dy = B.y - A.y, L = Math.hypot(dx, dy) || 1, k = ((a.length + b.length) % 2 ? 1 : -1) * L * 0.07, cx = (A.x + B.x) / 2 - dy / L * k, cy = (A.y + B.y) / 2 + dx / L * k, d = `M${A.x} ${A.y}Q${cx.toFixed(0)} ${cy.toFixed(0)} ${B.x} ${B.y}`;
+    svg += `<path d="${d}" fill="none" stroke="#1b140c" stroke-opacity=".45" stroke-width="5"/><path d="${d}" fill="none" stroke="#dcc48e" stroke-opacity=".5" stroke-width="2" stroke-dasharray="2 7" stroke-linecap="round"/>`;
+  }
+  [[120, .0018, .1, 120], [260, .0014, .45, 640], [200, .0021, .75, 950], [150, .0016, .3, 330]].forEach(([w, sp, off, y]) => svg += `<g data-cloud data-sp="${sp}" data-off="${off}" data-y="${y}" fill="#efe6cf" opacity=".07"><ellipse rx="${w}" ry="${w * .22}"/><ellipse cx="${w * .5}" cy="-8" rx="${w * .6}" ry="${w * .2}"/></g>`);
+  for (const [p, sp, off, sc] of SHIPS) svg += `<g data-ship="${p}" data-sp="${sp}" data-off="${off}" data-sc="${sc}" transform="translate(-99 -99)"><path d="M-13 0 L13 0 L8 7 L-8 7Z" fill="#7a5632" stroke="#2b1d10"/><path d="M1 -1 L1 -19 L12 -5Z" fill="#f1e6c6" stroke="#8b7a55"/><path d="M-1 -1 L-1 -16 L-9 -4Z" fill="#d7c79c" stroke="#8b7a55"/></g>`;
+  for (const m of W.marches) {
+    const f = NODES[m.from], t = NODES[m.to], s = W.sects[m.sect], pr = Math.min(1, Math.max(0, (el - m.start) / Math.max(1, m.arriveAt - m.start))), x = f.x + (t.x - f.x) * pr, y = f.y + (t.y - f.y) * pr;
+    svg += `<line x1="${f.x}" y1="${f.y}" x2="${t.x}" y2="${t.y}" stroke="${s.color}" stroke-width="4" stroke-dasharray="8 6"/><circle cx="${x}" cy="${y}" r="9" fill="${s.color}" stroke="#fff" stroke-width="2"><title>${esc(m.sect)} 병력</title></circle><text x="${x}" y="${y + 5}" text-anchor="middle" font-size="12">⚔️</text>`;
+  }
+  for (const id in NODES) {
+    if (!visible(id, day)) continue;
+    const N = NODES[id], ns = W.nodes[id], own = ns.owner ? W.sects[ns.owner] : null;
+    if (ns.destroyed) { svg += `<g opacity=".45"><circle cx="${N.x}" cy="${N.y}" r="11" fill="#171513" stroke="#9b5548" stroke-width="2"/><path d="M${N.x - 6} ${N.y - 6}l12 12m0 -12l-12 12" stroke="#b76a58" stroke-width="2"/><text x="${N.x}" y="${N.y + 25}" text-anchor="middle" font-size="11" fill="#d6a18d">파괴됨</text></g>`; continue; }
+    const hq = !!SECTS[id], color = own ? own.color : '#8a7a60', r = hq ? 26 : (N.type === 'stronghold' ? 12 : (N.type === 'subsect' ? 15 : 16)), sel = ui.node === id;
+    svg += `<g data-act="node" data-id="${id}" style="cursor:pointer"><title>${esc(id)}</title>`;
+    if (attackable.has(id)) svg += `<circle cx="${N.x}" cy="${N.y}" r="${r + 10}" fill="none" stroke="#f0c768" stroke-width="2.5" stroke-dasharray="5 4"/>`;
+    if (hq) svg += `<circle cx="${N.x}" cy="${N.y}" r="${r + 7}" fill="#000a" stroke="#d9b46c" stroke-width="2"/>`;
+    if ((ns.fortLevel || 0) > 0) svg += `<circle cx="${N.x}" cy="${N.y}" r="${r + 5}" fill="none" stroke="#d7b96f" stroke-width="${1 + ns.fortLevel}" stroke-opacity=".8"/>`;
+    svg += `<circle cx="${N.x}" cy="${N.y}" r="${r}" fill="${color}" stroke="${sel ? '#fff3c4' : '#d0bd91'}" stroke-width="${sel ? 3.5 : 1.6}"/><text x="${N.x}" y="${N.y + (hq ? 8 : 5)}" text-anchor="middle" font-size="${hq ? 26 : (N.type === 'stronghold' ? 13 : 17)}">${NODE_ICON[N.type]}</text>`;
+    const label = N.type === 'stronghold' ? N.siteName : id;
+    svg += `<text x="${N.x}" y="${N.y + r + (hq ? 24 : 15)}" text-anchor="middle" font-size="${hq ? 19 : (N.type === 'stronghold' ? 11 : 13)}" font-weight="${hq ? 700 : 400}" fill="#f6e7bd" stroke="#13201c" stroke-width="3.5" paint-order="stroke">${esc(label)}</text>`;
+    if (hq && own && !own.defeated) svg += `<text x="${N.x}" y="${N.y + r + 40}" text-anchor="middle" font-size="12" fill="#e0c88f" stroke="#13201c" stroke-width="3" paint-order="stroke">${rankOf(own).label}${own.owner !== 'AI' ? ' · ' + esc(own.ownerName) : ''}</text>`;
+    svg += '</g>';
+  }
+  svg += '</svg>';
+
+  const info = ui.node ? nodeInfo(W, me, ui.node, attackable) : '<div class="dim">지도에서 지역을 눌러 보세요. 금색 점선 테두리는 출정 가능한 지역이에요. 일반 영토·산하 문파·본산·핵심 거점은 전투에서 2회 승리해야 점령하거나 무너뜨릴 수 있어요.</div>';
+  const mine = me ? W.marches.filter(m => m.sect === me.name).map(m => `<div>🚩 ${m.to} 방면 행군 중 (도착까지 ${Math.max(0, Math.round(m.arriveAt - el))}초)</div>`).join('') : '';
+  const objective = me ? `<div class="objective"><b class="gold">⚔️ 승리 조건</b><span>적 문파의 본산과 핵심 거점 2곳을 각각 두 차례 승리해 무너뜨리세요.</span></div>` : '';
+  return `${objective}<div class="panel"><div class="row" style="margin-bottom:6px"><button class="sub" data-act="zoom" data-f="0.8">＋ 확대</button><button class="sub" data-act="zoom" data-f="1.25">－ 축소</button><button class="sub" data-act="zoom" data-f="0">전체 보기</button><button class="sub" data-act="home">🏯 내 문파로</button><span class="dim">드래그로 이동 · 휠로 확대/축소</span></div><div class="map-frame">${svg}</div><div class="map-legend"><span>◆ 문파 본산</span><span>⛩️ 산하 문파 (소속 문파 색상)</span><span>🛕 핵심 거점</span><span>◇ 자원 거점</span><span>━━ 행군로</span><span>금색 점선: 출정 가능</span><span>금색 외곽선: 방어 시설</span></div></div><div class="two"><div class="panel">${info}</div><div class="panel"><h3>내 출정 부대</h3>${mine || '<div class="dim">출정 중인 부대가 없어요 (최대 2개)</div>'}</div></div>`;
+}
+
+function nodeInfo(W, me, id, attackable) {
+  const N = NODES[id], ns = W.nodes[id], own = ns.owner ? W.sects[ns.owner] : null;
+  const scouts = me && (me.orgs['정찰대'] || 0) >= 10, ownMine = me && ns.owner === me.name;
+  const def = defPowerOf(W, id, W.d);
+  const siege = ns.siege;
+  const defTxt = ownMine || scouts ? num(def) : fuzz(def, id + W.d);
+  const hq = !!SECTS[id] && !W.sects[id].defeated, core = !!N.core;
+  const garrison = ns.garrison || REALMS.map(() => 0), garrisonTotal = sum(garrison);
+  let h = `<h3>${NODE_ICON[N.type]} ${id}</h3>
+    <div class="dim">${NODE_LABEL[N.type]}${hq ? ' · ' + SECTS[id].desc : ''}</div>
+    <div>소유: ${own ? `<b style="color:${own.color}">${own.name}</b> (${own.owner === 'AI' ? 'AI' : esc(own.ownerName)})` : '주인 없음'}</div>
+    <div>하루 수입: 금 +${N.income}</div>
+    <div>방어 전력: <b>${defTxt}</b>${!scouts && !ownMine ? ' <span class="dim">(정찰대 10명 이상이면 정확히 보임)</span>' : ''}</div>
+    ${N.core ? `<div class="gold">핵심 거점 · 파괴 시 ${esc(N.sect)}의 3대 거점 중 1곳 제거</div>` : ''}
+    ${ns.fortLevel ? `<div>방어 시설: <b class="gold">${ns.fortLevel}/3단계</b></div>` : ''}
+    ${garrisonTotal ? `<div>주둔 병력: <b>${num(garrisonTotal)}명</b></div>` : ''}
+    ${siege ? `<div class="gold">포위전: ${esc(siege.sect)} ${siege.progress}/2단계</div>` : ''}`;
+  if (hq && own) {
+    const strong = own.counts.map((c, i) => [REALMS[i], c]).slice(4).filter(x => x[1] > 0).map(x => `${x[0]} ${x[1]}명`).join(', ');
+    h += `<div>강자: ${strong || '초절정 이상 없음'}</div><div>고수: ${(own.masters || []).map(m => '「' + esc(m.alias) + '」').join(' ') || '-'}</div>${own.leaderDead ? '<div class="red">장문인 전사 상태</div>' : ''}`;
+    if (isOffline(own)) h += '<div class="dim">(접속 안 한 문파: 방어력 +30%)</div>';
+  }
+  if (me && ownMine && !ns.destroyed) {
+    const level = ns.fortLevel || 0, fortCost = 900 * (level + 1) * (level + 1);
+    h += `<div style="margin-top:10px;border-top:1px solid #4a3a2c;padding-top:8px"><b>🧱 방어 거점 건설 / 강화</b><div>${btn(`data-act="fort" data-to="${id}"`, level >= 3 ? '최대 강화' : `방어 시설 ${level+1}단계 건설 (${num(fortCost)}금)`, level >= 3 || me.gold < fortCost)} <span class="dim">최대 3단계 · 방어력 상승</span></div>`;
+    h += `<div style="margin-top:8px"><b>🛡️ 병력 주둔 / 증원</b><div class="dim">보낼 병력의 경지별 인원만큼 본대에서 빠져 이 거점을 지킵니다.</div>`;
+    const sendOptions = [[0,100,'삼류 100명'],[2,10,'일류 10명'],[3,1,'절정 1명'],[4,1,'초절정 1명'],[5,1,'화경 1명']];
+    for (const [i,n,label] of sendOptions) h += btn(`data-act="garrison" data-to="${id}" data-i="${i}" data-n="${n}"`, label, me.counts[i] < n);
+    const withdrawOptions = [[0,100,'삼류 100명 회수'],[2,10,'일류 10명 회수'],[3,1,'절정 1명 회수'],[4,1,'초절정 1명 회수'],[5,1,'화경 1명 회수']];
+    for (const [i,n,label] of withdrawOptions) if ((garrison[i] || 0) >= n) h += btn(`data-act="withdraw" data-to="${id}" data-i="${i}" data-n="${n}"`, label);
+    h += `</div></div>`;
+  }
+  if (me && attackable.has(id)) {
+    const full = W.marches.filter(m => m.sect === me.name).length >= 2;
+    const modes = [['mass', '대군 출진', '삼류~일류 80%'], ['elite', '정예 출진', '절정 이상 전원'], ['all', '전군 출진', '전체 70%']];
+    h += '<div style="margin-top:8px"><b>출진</b></div>';
+    for (const [m, label, desc] of modes) {
+      const P = (power(makeUnits(me, m)) + (m !== 'mass' ? prodigyPower(me) : 0)) * atkMult(me);
+      h += `<div>${btn(`data-act="march" data-to="${id}" data-mode="${m}"`, label, full || P <= 0)} <span class="dim">${desc} · 공격 전력 ${num(P)}</span></div>`;
+    }
+    if (full) h += '<div class="red">부대를 이미 2개 출정시켰어요</div>';
+  } else if (me && ns.owner !== me.name) {
+    h += '<div class="dim" style="margin-top:8px">내 영토와 맞닿아 있지 않아서 아직 공격할 수 없어요</div>';
+  }
+  return h;
+}
+
+/* ----- 문파·육성 ----- */
+function tabSect(W, me) {
+  const c = me.counts, total = sum(c), org = orgTotal(me);
+  const away = sum(W.marches.filter(m => m.sect === me.name).map(m => sum(m.units)));
+  const rows = REALMS.map((r, i) => {
+    const train = i <= 7 ? [1, 5, 20].map(n => btn(`data-act="train" data-i="${i}" data-n="${n}"`, `${n}명`, me.gold < TRAIN_COST[i])).join('') + ` <span class="dim">1명당 ${num(TRAIN_COST[i])}금</span>` : '<span class="dim">최상위</span>';
+    return `<tr><td>${r}</td><td>${num(c[i])}</td><td style="text-align:left">${i <= 7 ? '지도 → ' + REALMS[i + 1] : ''} ${train}</td></tr>`;
+  }).reverse().join('');
+  return `<div class="panel"><h3>🏯 ${me.name} 무인 현황 <span class="tag me">${rankOf(me).label}</span></h3>${rankOf(me).next ? `<div class="dim">다음 등급 「${rankOf(me).next[1]}」까지 전투력 ${num(rankOf(me).p)} / ${num(rankOf(me).next[0])}</div><div class="bar" style="margin:4px 0 8px"><div style="width:${Math.min(100, rankOf(me).p / rankOf(me).next[0] * 100)}%"></div></div>` : ''}
+    <div class="dim">대규모로 키울지, 소수정예로 키울지는 문주의 선택이에요. 삼류를 늘리면 싸고 빠르지만 약하고, 높은 경지는 비싸고 느리지만 전투에서 훨씬 오래 살아남아요.</div>
+    <div style="margin:8px 0">모집: ${[10, 50, 100].map(n => btn(`data-act="recruit" data-n="${n}"`, `삼류 ${n}명 (${num(n * RECRUIT_COST)}금)`, me.gold < n * RECRUIT_COST)).join('')}</div>
+    <div style="margin:10px 0;padding:10px;border:1px solid #9b793f;border-radius:8px;background:linear-gradient(120deg,#302719,#1d1a16)"><b class="gold">🎓 10대제자 수련원</b><div class="dim">삼류·이류 제자 10명을 입관시켜 3일간 수련합니다. 졸업 시 전원 일류가 됩니다. (입관 비용 1,200금)</div>${me.academy ? `<div class="gold">수련 진행 중 · 남은 기간 ${me.academy.days}일 · 졸업 예정 ${me.academy.count}명</div>` : btn('data-act="academy"', '제자 10명 수련원 입관 (1,200금)', me.gold < 1200 || c[0] + c[1] < 10)}${!me.academy && c[0] + c[1] < 10 ? '<div class="red">삼류·이류 제자가 최소 10명 필요합니다.</div>' : ''}</div>
+    <table><tr><th>경지</th><th>인원</th><th style="text-align:left">직접 지도(일류 이상은 성공 확률 1/3 · 실패해도 금 소모)</th></tr>${rows}
+    <tr><th>합계</th><th>${num(total)}</th><th style="text-align:left" class="dim">조직 배치 ${num(org)}명 · 출정 중 ${num(away)}명 포함 아님</th></tr></table>
+    <div class="dim" style="margin-top:8px">⚙️ 하루마다 자연 승급이 판정돼요. 문파별 무인 자질 보정에 제자단·약초밭 효과가 추가 적용됩니다.</div>
+    <div class="dim" style="margin-top:5px">문파 자질: ${SECTS[me.name].talentLabel || '일반 자질 보정 ×1.0'} · 문주 부재 시 승급 확률 50%</div>
+    <div class="dim" style="margin-top:5px;line-height:1.9">삼류 → 이류 4% · 이류 → 일류 3% · 일류 → 절정 2% · 절정 → 초절정 0.8%<br>초절정 → 화경 0.3% · 화경 → 현경 0.07% · 현경 → 생사경 0.05% · 생사경 → 자연경 0.01%<br><b class="gold">초절정 이상은 재능의 벽:</b> 자연 승급 확률이 기존의 8%만 적용되며, 문파별 천재 자질이 추가 반영됩니다.</div>
+    ${me.prodigy ? `<div style="margin-top:10px;padding:10px;border:1px solid #b98b42;border-radius:8px;background:linear-gradient(120deg,#352a1a,#211b16)"><b class="gold">🌠 초월급 기인 — ${me.prodigy.name}</b><div>현재 경지: <b>${REALMS[me.prodigy.realm]}</b> · 매일 50% 확률로 한 단계 돌파 · 일반 무인보다 압도적인 전투력</div></div>` : ''}
+    <div style="margin-top:8px">공격 배율 <b>×${atkMult(me).toFixed(2)}</b> · 방어 배율 <b>×${defMult(me).toFixed(2)}</b> · 전투력 합계 <b>${num(power(avail(me)))}</b></div></div>`;
+}
+
+/* ----- 조직 ----- */
+function tabOrg(W, me) {
+  const max = Math.floor(me.counts[0] * 0.8), used = orgTotal(me), scouts = (me.orgs['정찰대'] || 0) >= 10;
+  const rows = ORGS.map(([n, d]) => `<tr><td>${n}<div class="dim">${d}</div></td><td>${num(me.orgs[n] || 0)}</td>
+    <td style="text-align:left">${[-10, -1, 1, 10].map(x => btn(`data-act="org" data-o="${n}" data-d="${x}"`, (x > 0 ? '+' : '') + x)).join('')}</td></tr>`).join('');
+  const ready = (me.orgs['암살대'] || 0) >= 5 && W.d > me.lastAssDay;
+  const targets = Object.keys(W.sects).filter(n => n !== me.name && !W.sects[n].defeated && !W.sects[n].leaderDead).map(n => {
+    const t = W.sects[n];
+    return `<div>${btn(`data-act="kill" data-target="${n}"`, '암살 시도', !ready)} ${n} <span class="dim">(${t.owner === 'AI' ? 'AI' : esc(t.ownerName)}) 성공률 ${scouts ? Math.round(assassinChance(me, t) * 100) + '%' : '불명 (정찰대 필요)'}</span></div>`;
+  }).join('');
+  return `<div class="panel"><h3>👥 문파 조직</h3>
+    <div class="dim">삼류 무인을 각 조직에 배치해요. 배치된 인원은 전투에 참가하지 않아요. (삼류의 80%까지 배치 가능) 배치 ${num(used)} / ${num(max)}</div>
+    <table><tr><th>조직</th><th>인원</th><th style="text-align:left">조정</th></tr>${rows}</table></div>
+    <div class="panel"><h3>🗡️ 암살 작전</h3>
+    <div class="dim">암살대 5명 이상, 하루에 한 번. 성공하면 장문인이 전사해 그 문파가 크게 약해져요. 실패하면 암살대 60%를 잃어요. ${ready ? '' : '<span class="red">(지금은 불가능: 암살대 부족 또는 오늘 이미 시도)</span>'}</div>${targets || '<div class="dim">대상 없음</div>'}</div>`;
+}
+
+/* ----- 무공·무기 ----- */
+function tabArts(W, me) {
+  const arts = SECTS[me.name].arts.map((a, i) => {
+    const lv = me.arts[i], cost = artCost(me, i), k = KIND[a.k];
+    return `<tr><td><b>${a.n}</b><div class="dim">${a.k} · 한 성마다 공격 +${Math.round(k[0] * 100)}% / 방어 +${Math.round(k[1] * 100)}%</div></td>
+      <td>${'★'.repeat(lv)}${'☆'.repeat(MAX_ART - lv)}</td>
+      <td style="text-align:left">${lv >= MAX_ART ? '<span class="green">대성</span>' : btn(`data-act="art" data-i="${i}"`, `연구 (${num(cost)}금)`, me.gold < cost)}</td></tr>`;
+  }).join('');
+  const w = WEAPONS[me.weapon], nw = WEAPONS[me.weapon + 1];
+  return `<div class="panel"><h3>📜 ${me.name} 고유 무공</h3>
+    <div class="dim">다른 문파는 이 무공을 배울 수 없어요. 장서각 인원이 많으면 연구비가 줄어들어요.</div>
+    <table><tr><th>무공</th><th>수련</th><th style="text-align:left">연구</th></tr>${arts}</table></div>
+    <div class="panel"><h3>🗡️ 무기고</h3>
+    <div>현재: <b class="gold">[${w.g}] ${w.n}</b> <span class="dim">공격 ×${w.atk} · 방어 +${Math.round(w.def * 100)}%</span></div>
+    <div style="margin-top:6px">${nw ? btn('data-act="weapon"', `[${nw.g}] ${nw.n}(으)로 강화 (${num(nw.cost)}금)`, me.gold < nw.cost) + `<span class="dim"> 공격 ×${nw.atk} · 방어 +${Math.round(nw.def * 100)}%</span>` : '<span class="green">최고 등급입니다</span>'}</div></div>`;
+}
+
+/* ----- 천하 형세 ----- */
+function tabWorld(W, me) { return tabWorld0(W, me) + hallOfMasters(W); }
+function tabWorld0(W, me) {
+  const scouts = me && (me.orgs['정찰대'] || 0) >= 10;
+  const list = Object.keys(W.sects).map(n => W.sects[n]).filter(s => !s.defeated).map(s => {
+    let top = 0; for (let i = 8; i >= 0; i--) if (s.counts[i] > 0) { top = i; break; }
+    return { s, top, pw: power(s.counts) };
+  }).sort((a, b) => b.top - a.top || b.pw - a.pw);
+  const rows = list.map(({ s, top }) => {
+    const mineRow = me && s.name === me.name, exact = mineRow || scouts;
+    const strong = s.counts.map((c, i) => [REALMS[i], c]).slice(4).filter(x => x[1] > 0).map(x => `${x[0]} ${x[1]}`).join(' / ') || '-';
+    const jeol = sum(s.counts.slice(3)), total = sum(s.counts);
+    const cores = CORE_SITE_IDS[s.name].filter(id => !W.nodes[id].destroyed).length;
+    const tag = s.owner === 'AI' ? '<span class="tag ai">AI</span>' : `<span class="tag ${mineRow ? 'me' : ''}">${esc(s.ownerName)}</span>`;
+    return `<tr><td><span style="color:${s.color}">●</span> ${s.name}${tag}${s.prodigy ? ` <span class="gold">🌠 초월급 기인(${REALMS[s.prodigy.realm]})</span>` : ''}${s.leaderDead ? ' <span class="red">☠</span>' : ''}</td>
+      <td>${REALMS[top]}</td><td style="text-align:left">${strong}</td>
+      <td><b class="gold">${cores}/3</b></td><td>${exact ? num(jeol) : fuzz(jeol, s.name + 'j' + W.d)}</td><td>${exact ? num(total) : fuzz(total, s.name + 't' + W.d)}</td></tr>`;
+  }).join('');
+  const dead = Object.keys(W.sects).filter(n => W.sects[n].defeated).map(n => `${n}`).join(', ');
+  const tourRows = (W.tournaments || []).map(t => `<tr><td>${t.day}일</td><td><b class="gold">${esc(t.winner)}</b></td><td>${esc(t.ownerName)}</td><td>+${num(t.reward)}금</td></tr>`).join('');
+  return `<div class="panel"><h3>🌏 천하 형세 (강한 순)</h3>
+    <div class="dim">각 문파는 본산 포함 핵심 거점 3곳을 보유합니다. 핵심 거점이 모두 파괴되면 해당 문파는 멸문합니다. 초절정 이상의 강자는 누구나 볼 수 있어요.</div>
+    <table><tr><th>문파</th><th>최고 경지</th><th style="text-align:left">강자 (초절정 이상)</th><th>핵심 거점</th><th>절정 이상</th><th>전체</th></tr>${rows}</table>
+    ${dead ? `<div class="dim" style="margin-top:8px">멸문: ${dead}</div>` : ''}</div>
+    <div class="panel"><h3>🏆 무림대회 기록</h3><div class="dim">게임 내 30일마다 자동 개최 · 우승 문파는 상금과 명성을 얻습니다.</div><table><tr><th>개최일</th><th>우승 문파</th><th>문주</th><th>상금</th></tr>${tourRows || '<tr><td colspan="4" class="dim">첫 무림대회는 30일차에 열립니다.</td></tr>'}</table></div>`;
+}
+
+function financePanel(W, me) {
+  const mult = (SECTS[me.name].traits && SECTS[me.name].traits.stats.income) || 1;
+  const nodes = Object.keys(W.nodes).filter(id => W.nodes[id].owner === me.name && NODES[id].income > 0).sort((a, b) => NODES[b].income - NODES[a].income);
+  const land = sum(nodes.map(id => NODES[id].income)), shop = (me.orgs['상단'] || 0) * 3;
+  return `<div class="panel"><h3>💰 재정 (하루 기준)</h3><table>
+    <tr><td>기본 수입</td><td>+150</td></tr><tr><td>상단 (${me.orgs['상단'] || 0}명 × 3)</td><td>+${num(shop)}</td></tr>
+    <tr><td>영토 수입 (${nodes.length}곳)</td><td>+${num(land)}</td></tr><tr><td>문파 수입 보정</td><td>×${mult}</td></tr>
+    <tr><td><b>총수입</b></td><td><b>${num(grossOf(W, me))}</b></td></tr><tr><td>인원 유지비</td><td class="red">−${num(upkeepOf(me))}</td></tr>
+    <tr><td><b>하루 순수입</b></td><td><b class="${incomeOf(W, me) < 0 ? 'red' : 'gold'}">${incomeOf(W, me) > 0 ? '+' : ''}${num(incomeOf(W, me))}</b></td></tr></table>
+    <div class="${incomeOf(W, me) < 0 ? 'red' : 'dim'}" style="margin-top:8px">${incomeOf(W, me) < 0 ? '⚠️ 적자 상태: 매일 문파 인원의 3%가 이탈합니다.' : '재정이 흑자입니다. 유지비를 감당할 수 있습니다.'}</div><div class="dim" style="margin-top:6px">영토: ${nodes.map(id => `${esc(id)} +${NODES[id].income}`).join(' · ') || '없음'}</div></div>`;
+}
+const mrow = (m, s, extra) => { const t = masterStats(m, s); return `<tr><td><b class="gold">「${esc(m.alias)}」</b> ${esc(m.name)}<span class="tag">${REALMS[m.realm]}</span>${m.pills ? `<span class="tag">영단 ${m.pills}회</span>` : ''}</td>${extra || ''}<td>${num(t.hp)}</td><td>${t.qi}갑자</td><td>${num(t.atk)}</td></tr>`; };
+function tabPill(W, me) {
+  const P = me.pills || {};
+  const rows = [2, 3, 4, 5, 6, 7].map(i => `<tr><td><b>${PILL_NAME[i]}</b><div class="dim">${REALMS[i]} → ${REALMS[i + 1]}</div></td><td>${num(PILL_COST[i])}금</td><td>${P[i] || 0}</td><td style="text-align:left">${btn(`data-act="buyPill" data-i="${i}"`, '구매', me.gold < PILL_COST[i])}${btn(`data-act="givePill" data-i="${i}"`, '가장 강한 자에게', !(P[i] > 0) || me.counts[i] < 1)}</td></tr>`).join('');
+  const ms = (me.masters || []).slice().sort((a, b) => b.realm - a.realm || masterStats(b, me).atk - masterStats(a, me).atk);
+  const mr = ms.map(m => mrow(m, me, '')).join('') || '<tr><td colspan="4" class="dim">아직 현경에 오른 고수가 없습니다</td></tr>';
+  const pick = ms.filter(m => m.realm < 8).map(m => `<div>${btn(`data-act="givePill" data-i="${m.realm}" data-m="${m.id}"`, `「${esc(m.alias)}」에게 ${PILL_NAME[m.realm]} 복용`, !(P[m.realm] > 0) || me.counts[m.realm] < 1)}</div>`).join('');
+  return `<div class="panel"><h3>💊 영단 창고</h3><div class="dim">돈이 쌓이면 영단을 사서 문파의 가장 강한 무인에게 먹여 한 단계 끌어올릴 수 있어요. 현경 이상 고수는 아래에서 직접 골라 복용시킬 수 있고, 복용할 때마다 체력·내공·공격력이 12%씩 오릅니다.</div>
+    <table><tr><th>영단</th><th>가격</th><th>보유</th><th style="text-align:left">행동</th></tr>${rows}</table></div>
+    <div class="panel"><h3>👑 ${me.name} 고수 명부 (현경 이상)</h3><table><tr><th>별호 · 이름</th><th>체력</th><th>내공</th><th>공격력</th></tr>${mr}</table>${pick ? `<div style="margin-top:8px"><b>고수에게 직접 영단 복용</b>${pick}</div>` : ''}</div>`;
+}
+function hallOfMasters(W) {
+  const all = []; for (const n in W.sects) { const s = W.sects[n]; if (!s.defeated) (s.masters || []).forEach(m => all.push([s, m, masterStats(m, s)])); }
+  all.sort((a, b) => b[1].realm - a[1].realm || b[2].atk - a[2].atk);
+  const rows = all.map(([s, m]) => mrow(m, s, `<td style="color:${s.color}">${s.name}</td>`)).join('') || '<tr><td colspan="5" class="dim">아직 현경에 오른 고수가 없습니다</td></tr>';
+  return `<div class="panel"><h3>👑 천하 고수 명부 (현경 이상 · 별호)</h3><table><tr><th>별호 · 이름</th><th style="text-align:left">문파</th><th>체력</th><th>내공</th><th>공격력</th></tr>${rows}</table></div>`;
+}
+boot();
+</script>
+</body>
+</html>
