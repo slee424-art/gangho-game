@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>강호대전: 천하쟁패</title>
+<style>
+  :root { --bg:#14110f; --panel:#221c18; --line:#4a3a2c; --gold:#d9b46c; --text:#eadfce; --dim:#9a8b78; --red:#c0503c; --green:#6fae6a; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:"Noto Sans KR","Malgun Gothic",sans-serif; }
+  h1,h2,h3 { color:var(--gold); margin:0 0 10px; }
+  #app { max-width:1020px; margin:0 auto; padding:14px; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:14px; margin-bottom:12px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:10px; }
+  .card { background:#2b231d; border:1px solid var(--line); border-radius:8px; padding:10px; cursor:pointer; }
+  .card:hover { border-color:var(--gold); }
+  .card.mine { border-color:var(--gold); box-shadow:0 0 0 2px var(--gold) inset; }
+  .card.taken { opacity:.55; cursor:not-allowed; }
+  .card b { color:var(--gold); font-size:17px; }
+  .dim { color:var(--dim); font-size:13px; }
+  .red { color:var(--red); } .green { color:var(--green); } .gold { color:var(--gold); }
+  button { background:var(--gold); color:#2a1d0c; border:0; border-radius:6px; padding:7px 12px; font-weight:700; cursor:pointer; margin:2px; }
+  button.sub { background:#3a2f26; color:var(--text); border:1px solid var(--line); }
+  button.on { outline:2px solid var(--gold); }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th,td { padding:6px 8px; border-bottom:1px solid var(--line); text-align:right; }
+  th:first-child,td:first-child { text-align:left; }
+  .bar { height:10px; background:#3a2f26; border-radius:5px; overflow:hidden; }
+  .bar > div { height:100%; background:var(--gold); }
+  .tag { display:inline-block; font-size:11px; padding:1px 6px; border-radius:10px; background:#3a2f26; margin-left:6px; }
+  .tag.ai { color:var(--dim); } .tag.me { color:#2a1d0c; background:var(--gold); }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+  .top { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; }
+  .log div { font-size:13px; padding:2px 0; border-bottom:1px dashed #3a2f26; }
+  .toast { position:fixed; bottom:16px; left:50%; transform:translateX(-50%); background:#000c; border:1px solid var(--gold); padding:8px 16px; border-radius:20px; }
+  svg text { font-family:"Noto Sans KR","Malgun Gothic",sans-serif; }
+  .two { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  @media (max-width:760px){ .two { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<div id="app"><div class="panel">접속 중... (처음 화면이 안 뜨면 새로고침)</div></div>
+
+<script type="module">
+const appEl = document.getElementById('app');
+let Playroom;
+{
+  const pick = m => [m, m && m.default, m && m.Playroom].find(x => x && typeof x.insertCoin === 'function');
+  const sources = [
+    'https://esm.sh/playroomkit',
+    'https://cdn.jsdelivr.net/npm/playroomkit/+esm',
+    'https://esm.run/playroomkit',
+    'https://cdn.skypack.dev/playroomkit',
+    'https://unpkg.com/playroomkit?module',
+  ];
+  const errors = [];
+  for (const url of sources) {
+    try {
+      const found = pick(await import(url));
+      if (found) { Playroom = found; break; }
+      errors.push(url + ' → insertCoin 없음');
+    } catch (e) { errors.push(url + ' → ' + String(e && e.message || e)); }
+  }
+  if (!Playroom) {
+    for (const url of ['https://cdn.jsdelivr.net/npm/playroomkit/multiplayer.umd.js', 'https://unpkg.com/playroomkit/multiplayer.umd.js']) {
+      try {
+        await new Promise((ok, no) => { const s = document.createElement('script'); s.src = url; s.onload = ok; s.onerror = () => no(new Error('불러오기 실패')); document.head.appendChild(s); });
+        const found = pick(window.Playroom) || pick(window.PlayroomKit);
+        if (found) { Playroom = found; break; }
+        errors.push(url + ' → insertCoin 없음');
+      } catch (e) { errors.push(url + ' → ' + String(e && e.message || e)); }
+    }
+  }
+  if (!Playroom) {
+    appEl.innerHTML = '<div class="panel">라이브러리 로드 실패<br><span class="dim">' + errors.map(s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;')).join('<br>') +
+      '<br><br>광고차단/VPN/보안 프로그램을 끄거나 다른 브라우저로 시도해 주세요. 주소: ' + location.href + '</span></div>';
+    throw new Error('Playroom load failed');
+  }
+  window.Playroom = Playroom;
+}
+window.addEventListener('error', ev => {
+  appEl.innerHTML = '<div class="panel">오류: ' + String(ev.message) + '</div>';
+});
+window.addEventListener('unhandledrejection', ev => {
+  appEl.innerHTML = '<div class="panel">오류: ' + String(ev.reason && ev.reason.message || ev.reason) + '</div>';
+});
+setTimeout(() => {
+  if (!window.__ready) {
+    appEl.innerHTML += '<div class="panel">10초가 지나도 연결되지 않았어요.<br>' +
+      '<span class="dim">주소: ' + esc(location.href) + '</span></div>';
+  }
+}, 10000);
+
+/*LOGIC_START*/
+/* =========================================================
+   게임 규칙 (화면/네트워크와 상관없는 순수 계산 부분)
+   ========================================================= */
+const REALMS = ['삼류','이류','일류','절정','초절정','화경','현경','생사경','자연경'];
+const DAY_SECONDS = 15 * 60;                 // 실제 15분 = 게임 1일
+const MAX_PLAYERS = 6;
+const POWER = [1, 3, 10, 35, 120, 420, 1500, 5000, 18000];            // 경지별 1인 전투력
+const PROMOTE = [0.040, 0.030, 0.020, 0.008, 0.003, 0.001, 0.0003, 0.0001]; // 하루 자연 승급 확률
+const TRAIN_COST = [2, 6, 20, 80, 300, 1200, 5000, 20000];            // 직접 지도 비용(1명당 금)
+const MAX_ART = 5;
+const PALETTE = ['#e0584a','#4aa3e0','#55c06a','#e0b84a','#b06ae0','#e08a4a'];
+
+const ORGS = [
+  ['상단',  '무역과 수익 (인원당 하루 금 +3)'],
+  ['정찰대','10명 이상이면 다른 문파의 전력을 정확히 볼 수 있음'],
+  ['암살대','5명 이상이면 다른 문파 문주 암살 시도 가능'],
+  ['호위대','문파 방어력 증가, 문주 보호'],
+  ['제자단','하루 승급 확률 증가'],
+  ['장서각','무공 연구비 할인'],
+];
+const ORG_NAMES = ORGS.map(o => o[0]);
+
+// 무공 종류별 (레벨당 공격 보너스, 레벨당 방어 보너스)
+const KIND = {
+  '검법':[0.05,0.01], '권법':[0.04,0.02], '장법':[0.04,0.02], '지법':[0.05,0.01], '봉법':[0.045,0.015],
+  '외공':[0.00,0.06], '내공':[0.03,0.03], '진법':[0.01,0.05], '경공':[0.02,0.02], '보법':[0.01,0.04],
+};
+
+// 무기 등급 (문파 무기고 수준)
+const WEAPONS = [
+  { g:'일반', n:'일반 철검',      atk:1.00, def:0.00, cost:0 },
+  { g:'고급', n:'정련 철검',      atk:1.08, def:0.02, cost:400 },
+  { g:'희귀', n:'명검',           atk:1.20, def:0.04, cost:1500 },
+  { g:'영물', n:'영검',           atk:1.40, def:0.07, cost:6000 },
+  { g:'전설', n:'신병',           atk:1.70, def:0.10, cost:24000 },
+  { g:'신화', n:'천하제일 신병',   atk:2.20, def:0.15, cost:90000 },
+];
+
+// 구파일방 (고유 무공 3개씩, base = 경지별 시작 인원)
+const SECTS = {
+  '소림파': { desc:'방어력, 외공, 대규모 병력', base:[900,300,90,20,4,1,0,0,0],
+    arts:[{n:'나한복호권',k:'권법'},{n:'금강불괴신공',k:'외공'},{n:'달마검법',k:'검법'}] },
+  '무당파': { desc:'검술, 태극, 내공', base:[400,200,90,30,6,2,0,0,0],
+    arts:[{n:'태극검',k:'검법'},{n:'태극권',k:'권법'},{n:'양의심공',k:'내공'}] },
+  '화산파': { desc:'검술, 소수정예', base:[200,120,70,30,8,2,0,0,0],
+    arts:[{n:'매화검법',k:'검법'},{n:'자하신공',k:'내공'},{n:'암향표영',k:'경공'}] },
+  '종남파': { desc:'검법, 진법', base:[350,180,80,25,5,1,0,0,0],
+    arts:[{n:'전진검법',k:'검법'},{n:'천강북두진',k:'진법'},{n:'선천공',k:'내공'}] },
+  '아미파': { desc:'경공, 검술, 회복', base:[350,180,80,25,5,1,0,0,0],
+    arts:[{n:'아미검법',k:'검법'},{n:'금정신공',k:'내공'},{n:'소요경공',k:'경공'}] },
+  '개방':   { desc:'정보력, 인맥, 거대 조직', base:[1200,250,60,12,3,1,0,0,0],
+    arts:[{n:'항룡십팔장',k:'장법'},{n:'타구봉법',k:'봉법'},{n:'취팔선보',k:'보법'}] },
+  '곤륜파': { desc:'내공, 경공', base:[300,160,80,28,6,1,0,0,0],
+    arts:[{n:'운룡대팔식',k:'경공'},{n:'곤륜검법',k:'검법'},{n:'현천신공',k:'내공'}] },
+  '공동파': { desc:'독특한 무공, 공격', base:[300,170,85,30,6,1,0,0,0],
+    arts:[{n:'칠상권',k:'권법'},{n:'복마검법',k:'검법'},{n:'오행진',k:'진법'}] },
+  '점창파': { desc:'빠른 검술, 암습', base:[250,140,70,28,7,1,0,0,0],
+    arts:[{n:'사일검법',k:'검법'},{n:'일지선',k:'지법'},{n:'점창암영보',k:'보법'}] },
+};
+
+// 강호 지도 (x,y = 지도 위 위치, guard = 수비 전력, income = 하루 수입, appear = 등장하는 날)
+const NODES = {
+  '소림파':{x:430,y:260,type:'sect',guard:500,income:40},
+  '무당파':{x:460,y:350,type:'sect',guard:500,income:40},
+  '화산파':{x:330,y:230,type:'sect',guard:500,income:40},
+  '종남파':{x:300,y:290,type:'sect',guard:500,income:40},
+  '아미파':{x:170,y:340,type:'sect',guard:500,income:40},
+  '개방':  {x:440,y:190,type:'sect',guard:500,income:40},
+  '곤륜파':{x:110,y:200,type:'sect',guard:500,income:40},
+  '공동파':{x:230,y:160,type:'sect',guard:500,income:40},
+  '점창파':{x:190,y:440,type:'sect',guard:500,income:40},
+  '북철광':{x:540,y:140,type:'mine',guard:300,income:60},
+  '서은광':{x:100,y:290,type:'mine',guard:350,income:60},
+  '약초곡':{x:350,y:400,type:'herb',guard:250,income:40},
+  '남약초밭':{x:560,y:310,type:'herb',guard:300,income:40},
+  '낙양':  {x:510,y:225,type:'city',guard:600,income:120},
+  '강남':  {x:570,y:410,type:'city',guard:600,income:120},
+  '남궁세가':{x:660,y:350,type:'house',guard:4000,income:150,appear:10},
+  '하북팽가':{x:640,y:180,type:'house',guard:3500,income:150,appear:10},
+  '사천당문':{x:250,y:370,type:'house',guard:3500,income:150,appear:10},
+  '산동악가':{x:670,y:260,type:'house',guard:3000,income:150,appear:10},
+  '제갈세가':{x:430,y:460,type:'house',guard:3800,income:150,appear:10},
+};
+const NODE_ICON = { sect:'🏯', mine:'⛏️', herb:'🌿', city:'🏙️', house:'🏰' };
+const NODE_LABEL = { sect:'문파 본산', mine:'광산', herb:'약초밭', city:'무역 도시', house:'세가' };
+const EDGES = [
+  ['화산파','종남파'],['화산파','개방'],['화산파','공동파'],['화산파','소림파'],['종남파','소림파'],['종남파','아미파'],
+  ['종남파','약초곡'],['소림파','개방'],['소림파','무당파'],['소림파','낙양'],['무당파','약초곡'],['무당파','강남'],
+  ['무당파','남약초밭'],['개방','낙양'],['개방','북철광'],['개방','공동파'],['공동파','곤륜파'],['곤륜파','서은광'],
+  ['곤륜파','화산파'],['서은광','아미파'],['아미파','약초곡'],['아미파','점창파'],['점창파','약초곡'],['낙양','북철광'],
+  ['낙양','남약초밭'],['남약초밭','강남'],['남궁세가','남약초밭'],['남궁세가','강남'],['하북팽가','북철광'],['하북팽가','낙양'],
+  ['사천당문','아미파'],['사천당문','약초곡'],['산동악가','낙양'],['산동악가','남약초밭'],['제갈세가','약초곡'],
+  ['제갈세가','강남'],['제갈세가','무당파'],
+];
+const ADJ = {};
+for (const id in NODES) ADJ[id] = [];
+for (const [a, b] of EDGES) { ADJ[a].push(b); ADJ[b].push(a); }
+
+let ONLINE = null;   // 지금 접속 중인 플레이어 id 모음 (접속 안 한 문파는 방어 보너스)
+
+const sum = a => a.reduce((x, y) => x + y, 0);
+const clone = o => JSON.parse(JSON.stringify(o));
+const rnd = Math.random;
+
+function logPush(W, text, k) { W.log.push({ d: W.d, t: text, k: k || 'sys' }); if (W.log.length > 60) W.log.shift(); }
+function orgTotal(s) { return sum(ORG_NAMES.map(n => s.orgs[n] || 0)); }
+function avail(s) { const c = s.counts.slice(); c[0] = Math.max(0, c[0] - orgTotal(s)); return c; }
+function power(c) { let p = 0; for (let i = 0; i < c.length; i++) p += c[i] * POWER[i]; return p; }
+function fixOrgs(s) {
+  const max = Math.floor(s.counts[0] * 0.8), t = orgTotal(s);
+  if (t > max) { const f = max / t; for (const n of ORG_NAMES) s.orgs[n] = Math.floor((s.orgs[n] || 0) * f); }
+}
+function atkMult(s) {
+  let a = 0; SECTS[s.name].arts.forEach((art, i) => { a += KIND[art.k][0] * s.arts[i]; });
+  return (1 + a) * WEAPONS[s.weapon].atk;
+}
+function defMult(s) {
+  let d = 0; SECTS[s.name].arts.forEach((art, i) => { d += KIND[art.k][1] * s.arts[i]; });
+  d += WEAPONS[s.weapon].def + Math.min(0.3, (s.orgs['호위대'] || 0) * 0.002);
+  return 1 + d;
+}
+function artCost(s, i) { return Math.ceil(150 * Math.pow(s.arts[i] + 1, 2) * (1 - Math.min(0.5, (s.orgs['장서각'] || 0) / 200))); }
+function visible(id, day) { const a = NODES[id].appear; return !a || day >= a; }
+function ownedNodes(W, name) { return Object.keys(W.nodes).filter(id => W.nodes[id].owner === name); }
+function guardOf(id, day) { return NODES[id].guard * (1 + 0.02 * day); }
+function isOffline(s) { return s.owner !== 'AI' && ONLINE !== null && !ONLINE.has(s.owner); }
+function incomeOf(W, s) {
+  let inc = 150 + (s.orgs['상단'] || 0) * 3 + Math.floor(sum(s.counts) / 20);
+  for (const id in W.nodes) if (W.nodes[id].owner === s.name) inc += NODES[id].income;
+  return inc;
+}
+function defPowerOf(W, id, day) {
+  const n = W.nodes[id];
+  if (SECTS[id] && !W.sects[id].defeated) {
+    const d = W.sects[id];
+    return power(avail(d)) * defMult(d) * 1.2 * (d.leaderDead ? 0.85 : 1) * (isOffline(d) ? 1.3 : 1);
+  }
+  const g = guardOf(id, day);
+  if (n.owner) { const d = W.sects[n.owner]; return g + 0.15 * power(avail(d)) * defMult(d); }
+  return g;
+}
+function assassinChance(s, t) {
+  const a = (s.orgs['암살대'] || 0) * 2 + 1;
+  const d = (t.orgs['호위대'] || 0) * 2 + sum(t.counts.slice(3)) * 0.5 + 5;
+  return Math.min(0.85, Math.max(0.05, a / (a + d)));
+}
+
+function makeWorld(picks) {   // picks = { 문파이름: {id, name} }
+  const sects = {}, nodes = {}, colors = {}; let ci = 0;
+  for (const name in SECTS) {
+    const o = picks[name];
+    if (o && !colors[o.id]) colors[o.id] = PALETTE[ci++ % PALETTE.length];
+    const counts = SECTS[name].base.slice(), c0 = counts[0];
+    sects[name] = {
+      name, owner: o ? o.id : 'AI', ownerName: o ? o.name : 'AI', color: o ? colors[o.id] : '#8a8a8a',
+      counts, gold: 3000,
+      orgs: { '상단': Math.floor(c0 * 0.08), '정찰대': 5, '암살대': 0, '호위대': Math.floor(c0 * 0.02), '제자단': Math.floor(c0 * 0.03), '장서각': Math.floor(c0 * 0.02) },
+      arts: [0, 0, 0], weapon: 0, leaderDead: false, leaderDeadDay: 0, peak: sum(counts), defeated: false, lastAssDay: 0,
+    };
+  }
+  for (const id in NODES) nodes[id] = { owner: SECTS[id] ? id : null };
+  return { sects, nodes, marches: [], log: [], colors, d: 1, nextId: 0, elapsed: 0 };
+}
+
+function makeUnits(s, mode) {
+  const av = avail(s), u = REALMS.map(() => 0);
+  for (let i = 0; i < 9; i++) {
+    let f = 0;
+    if (mode === 'mass') f = i <= 2 ? 0.8 : 0;
+    else if (mode === 'elite') f = i >= 3 ? 1 : 0;
+    else f = 0.7;
+    u[i] = Math.floor(av[i] * f);
+  }
+  return u;
+}
+
+function launch(W, name, to, mode) {
+  const s = W.sects[name];
+  if (!s || s.defeated || !NODES[to] || !visible(to, W.d) || W.nodes[to].owner === name) return false;
+  if (W.marches.filter(m => m.sect === name).length >= 2) return false;
+  const from = ADJ[to].find(id => W.nodes[id].owner === name);
+  if (!from) return false;
+  const units = makeUnits(s, mode);
+  if (power(units) <= 0) return false;
+  for (let i = 0; i < 9; i++) s.counts[i] -= units[i];
+  fixOrgs(s);
+  W.nextId = (W.nextId || 0) + 1;
+  W.marches.push({ id: W.nextId, sect: name, from, to, units, start: W.elapsed, arriveAt: W.elapsed + Math.round(DAY_SECONDS * 0.25) });
+  logPush(W, `🚩 [${name}] ${to}(으)로 출진 (병력 ${sum(units).toLocaleString()}명)`, 'war');
+  return true;
+}
+
+function lossFracs(L) { return REALMS.map((_, i) => Math.min(0.97, Math.max(0, L * (1.2 - 0.1 * i)))); }
+
+function reincarnate(W, pid, pname, byName) {
+  const cands = Object.keys(W.sects).filter(n => !W.sects[n].defeated && W.sects[n].owner === 'AI' && n !== byName);
+  if (!cands.length) { logPush(W, `💀 ${pname}은(는) 후계자로 돌아올 문파가 없어 관전자가 되었다`, 'war'); return; }
+  const n = cands[Math.floor(rnd() * cands.length)], t = W.sects[n];
+  t.owner = pid; t.ownerName = pname; t.color = W.colors[pid] || '#cccccc';
+  logPush(W, `🌀 ${pname}이(가) [${n}]의 후계자로 회귀했다!`, 'war');
+}
+
+function checkAbsorb(W, defName, attName) {
+  const s = W.sects[defName], att = W.sects[attName];
+  if (!s || !att || s.defeated || !s.leaderDead) return false;
+  const total = sum(s.counts);
+  if (total > 0.2 * s.peak) return false;
+  for (let i = 0; i < 9; i++) att.counts[i] += Math.floor(s.counts[i] * 0.5);
+  att.gold += Math.floor(s.gold * 0.5);
+  att.peak = Math.max(att.peak, sum(att.counts));
+  for (const id in W.nodes) if (W.nodes[id].owner === defName) W.nodes[id].owner = attName;
+  W.marches = W.marches.filter(m => m.sect !== defName);
+  const oldOwner = s.owner, oldName = s.ownerName;
+  s.counts = REALMS.map(() => 0); s.gold = 0; s.defeated = true;
+  logPush(W, `☠️ [${defName}] 멸문! [${attName}]이(가) 흡수했다`, 'war');
+  if (oldOwner !== 'AI') reincarnate(W, oldOwner, oldName, attName);
+  return true;
+}
+
+function resolveMarch(W, m) {
+  const att = W.sects[m.sect], day = W.d;
+  if (!att || att.defeated) return;
+  const home = () => { for (let i = 0; i < 9; i++) att.counts[i] += m.units[i]; };
+  const to = m.to, node = W.nodes[to];
+  if (node.owner === m.sect) { home(); logPush(W, `[${m.sect}] 병력이 ${to}에 도착했지만 이미 아군 땅이라 복귀했다`, 'war'); return; }
+  const hq = !!SECTS[to] && !W.sects[to].defeated;
+  const owner = node.owner, dsect = owner ? W.sects[owner] : null;
+  const A = power(m.units) * atkMult(att) * (att.leaderDead ? 0.85 : 1);
+  const D = Math.max(1, defPowerOf(W, to, day));
+  const a = A / (A + D), win = A > D;
+  const noise = () => 0.9 + rnd() * 0.2;
+  let lA = 0.7 * (1 - a) * (win ? 1 : 1.3) * noise();
+  let lD = 0.7 * a * (win ? 1.3 : 1) * noise();
+  lA = Math.min(0.95, Math.max(0.02, lA)); lD = Math.min(0.95, Math.max(0.02, lD));
+  const fa = lossFracs(lA);
+  let killedA = 0, eliteA = 0;
+  for (let i = 0; i < 9; i++) {
+    const lost = Math.min(m.units[i], Math.round(m.units[i] * fa[i]));
+    killedA += lost; if (i >= 3) eliteA += lost;
+    att.counts[i] += m.units[i] - lost;
+  }
+  let killedD = 0, eliteD = 0;
+  if (dsect) {
+    const av = avail(dsect), fd = lossFracs(lD * (hq ? 1 : 0.3));
+    for (let i = 0; i < 9; i++) {
+      const lost = Math.min(dsect.counts[i], Math.round(av[i] * fd[i]));
+      dsect.counts[i] -= lost; killedD += lost; if (i >= 3) eliteD += lost;
+    }
+    fixOrgs(dsect);
+  }
+  fixOrgs(att);
+  const stat = `(아군 전사 ${killedA.toLocaleString()}${eliteA ? `, 그중 절정 이상 ${eliteA}` : ''}${dsect ? ` / 적 전사 ${killedD.toLocaleString()}${eliteD ? `, 그중 절정 이상 ${eliteD}` : ''}` : ''})`;
+  if (win) {
+    if (!hq) {
+      node.owner = att.name;
+      logPush(W, `⚔️ [${att.name}] ${to} 점령 성공 ${stat}`, 'war');
+    } else {
+      logPush(W, `⚔️ [${att.name}]이(가) [${to}] 본산을 격파했다 ${stat}`, 'war');
+      let chance = a > 0.67 ? 0.6 : 0.3;
+      chance /= 1 + (dsect.orgs['호위대'] || 0) / 20;
+      if (!dsect.leaderDead && rnd() < chance) {
+        dsect.leaderDead = true; dsect.leaderDeadDay = day;
+        logPush(W, `🩸 [${to}] 장문인이 전사했다!`, 'war');
+      }
+      checkAbsorb(W, to, att.name);
+    }
+  } else {
+    logPush(W, `🛡️ [${att.name}] ${to} 공격 실패, 패퇴 ${stat}`, 'war');
+  }
+}
+
+function assassinate(W, name, targetName) {
+  const s = W.sects[name], t = W.sects[targetName];
+  if (!s || !t || t.defeated || targetName === name || t.leaderDead) return;
+  if ((s.orgs['암살대'] || 0) < 5 || W.d <= s.lastAssDay) return;
+  const p = assassinChance(s, t);
+  s.lastAssDay = W.d;
+  if (rnd() < p) {
+    t.leaderDead = true; t.leaderDeadDay = W.d;
+    for (let i = 0; i < 9; i++) t.counts[i] -= Math.floor(t.counts[i] * 0.03);
+    fixOrgs(t);
+    logPush(W, `🗡️ [${name}] 암살대가 [${targetName}] 장문인 암살에 성공했다!`, 'war');
+    checkAbsorb(W, targetName, name);
+  } else {
+    const lost = Math.ceil((s.orgs['암살대'] || 0) * 0.6);
+    s.orgs['암살대'] -= lost; s.counts[0] = Math.max(0, s.counts[0] - lost);
+    logPush(W, `🗡️ [${name}] 암살대가 [${targetName}] 암살에 실패하고 ${lost}명을 잃었다`, 'war');
+  }
+}
+
+function pickTarget(W, name) {
+  const mine = ownedNodes(W, name); let best = null;
+  for (const id in NODES) {
+    if (!visible(id, W.d) || W.nodes[id].owner === name) continue;
+    if (!ADJ[id].some(a => mine.includes(a))) continue;
+    const p = defPowerOf(W, id, W.d);
+    if (!best || p < best.power) best = { id, power: p };
+  }
+  return best;
+}
+
+function applyCmd(W, pid, c) {
+  const name = Object.keys(W.sects).find(n => W.sects[n].owner === pid && !W.sects[n].defeated);
+  if (!name) return;
+  const s = W.sects[name];
+  switch (c.t) {
+    case 'recruit': {
+      const n = Math.min([100, 500].includes(c.n) ? c.n : 0, Math.floor(s.gold));
+      s.gold -= n; s.counts[0] += n; break;
+    }
+    case 'train': {
+      const i = Number(c.i), want = Number(c.n);
+      if (!(i >= 0 && i <= 7) || ![1, 5, 20].includes(want)) break;
+      const real = Math.min(want, s.counts[i], Math.floor(s.gold / TRAIN_COST[i]));
+      if (real <= 0) break;
+      s.gold -= real * TRAIN_COST[i]; s.counts[i] -= real; s.counts[i + 1] += real;
+      if (i + 1 >= 4) logPush(W, `📈 [${name}]에서 ${real}명이 ${REALMS[i + 1]}에 올랐다`, 'sys');
+      break;
+    }
+    case 'org': {
+      if (!ORG_NAMES.includes(c.o) || ![-10, -1, 1, 10].includes(c.d)) break;
+      const max = Math.floor(s.counts[0] * 0.8), cur = s.orgs[c.o] || 0, others = orgTotal(s) - cur;
+      s.orgs[c.o] = Math.max(0, Math.min(cur + c.d, max - others)); break;
+    }
+    case 'art': {
+      const i = Number(c.i);
+      if (!(i >= 0 && i <= 2) || s.arts[i] >= MAX_ART) break;
+      const cost = artCost(s, i);
+      if (s.gold < cost) break;
+      s.gold -= cost; s.arts[i]++;
+      logPush(W, `📜 [${name}] ${SECTS[name].arts[i].n} ${s.arts[i]}성 달성`, 'sys'); break;
+    }
+    case 'weapon': {
+      const nw = WEAPONS[s.weapon + 1];
+      if (!nw || s.gold < nw.cost) break;
+      s.gold -= nw.cost; s.weapon++;
+      logPush(W, `🗡️ [${name}] 무기고가 ${nw.g} 등급 「${nw.n}」(으)로 강화되었다`, 'sys'); break;
+    }
+    case 'march': {
+      if (!['mass', 'elite', 'all'].includes(c.mode)) break;
+      launch(W, name, c.to, c.mode); break;
+    }
+    case 'kill': assassinate(W, name, c.target); break;
+  }
+}
+
+function aiAct(W, name) {
+  const s = W.sects[name];
+  if (s.defeated || s.owner !== 'AI') return;
+  let b = Math.floor(s.gold * 0.5);
+  for (const i of [3, 2, 4, 1, 0]) {
+    const cost = TRAIN_COST[i], n = Math.min(10, s.counts[i], Math.floor(b / cost));
+    if (n > 0) { s.counts[i] -= n; s.counts[i + 1] += n; s.gold -= n * cost; b -= n * cost; }
+  }
+  const rec = Math.min(300, Math.floor(b * 0.5));
+  if (rec > 0) { s.counts[0] += rec; s.gold -= rec; }
+  const nw = WEAPONS[s.weapon + 1];
+  if (nw && s.gold >= nw.cost * 1.5) { s.gold -= nw.cost; s.weapon++; }
+  const ai = Math.floor(rnd() * 3);
+  if (s.arts[ai] < MAX_ART) { const cost = artCost(s, ai); if (s.gold >= cost * 1.5) { s.gold -= cost; s.arts[ai]++; } }
+  if (W.marches.filter(m => m.sect === name).length < 1 && rnd() < 0.2) {
+    const t = pickTarget(W, name);
+    if (t && power(makeUnits(s, 'all')) * atkMult(s) >= t.power * 1.5) launch(W, name, t.id, 'all');
+  }
+}
+
+function dailyUpdate(W, day) {
+  W.d = day;
+  const herbBy = {};
+  for (const id in W.nodes) if (NODES[id].type === 'herb' && W.nodes[id].owner) herbBy[W.nodes[id].owner] = (herbBy[W.nodes[id].owner] || 0) + 1;
+  for (const name in W.sects) {
+    const s = W.sects[name];
+    if (s.defeated) continue;
+    s.gold += incomeOf(W, s);
+    if (s.leaderDead && day - s.leaderDeadDay >= 3) { s.leaderDead = false; logPush(W, `👑 [${name}] 새 장문인을 추대했다`, 'sys'); }
+    const mult = (s.leaderDead ? 0.5 : 1) * (1 + Math.min(0.5, (s.orgs['제자단'] || 0) / 200) + 0.05 * (herbBy[name] || 0));
+    for (let i = 7; i >= 0; i--) {
+      const exact = s.counts[i] * PROMOTE[i] * mult;
+      let n = Math.floor(exact);
+      if (rnd() < exact - n) n++;
+      n = Math.min(n, s.counts[i]);
+      s.counts[i] -= n; s.counts[i + 1] += n;
+      if (n > 0 && i + 1 >= 5) logPush(W, `🌟 [${name}]에서 ${n}명이 ${REALMS[i + 1]}에 올랐다`, 'sys');
+    }
+    s.counts[0] += Math.max(1, Math.round(SECTS[name].base[0] * 0.01));
+    fixOrgs(s);
+    s.peak = Math.max(s.peak, sum(s.counts));
+  }
+  if (day === 10) logPush(W, '🏰 강호에 오대세가가 모습을 드러냈다!', 'sys');
+  for (const name in W.sects) aiAct(W, name);
+}
+
+function checkEnd(W) {
+  const alive = Object.keys(W.sects).filter(n => !W.sects[n].defeated);
+  const owners = new Set(alive.map(n => W.sects[n].owner));
+  if (alive.length === 1 || owners.size === 1) {
+    const w = W.sects[alive[0]];
+    W.winner = { owner: w.owner, ownerName: w.ownerName, sects: alive };
+  }
+}
+/*LOGIC_END*/
+
+/* =========================================================
+   화면 / 네트워크
+   ========================================================= */
+let players = [];
+const ui = { tab: 'map', node: null, toast: '', toastAt: 0 };
+let lastTick = null, cmdCounter = 0, lastHtml = '';
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const num = n => Math.round(n).toLocaleString();
+const get = k => Playroom.getState(k);
+
+function toast(t) { ui.toast = t; ui.toastAt = Date.now(); }
+
+async function boot() {
+  try {
+    await Playroom.insertCoin({
+      maxPlayersPerRoom: MAX_PLAYERS,
+      defaultPlayerStates: { sect: '' },
+    });
+  } catch (e) {
+    $root.innerHTML = '<div class="panel">접속 실패: ' + esc(e.message || e) + '</div>';
+    return;
+  }
+  window.__ready = true;
+  Playroom.onPlayerJoin(player => {
+    players.push(player);
+    player.onQuit(() => { players = players.filter(p => p !== player); });
+  });
+  if (Playroom.isHost()) {
+    if (!get('phase')) Playroom.setState('phase', 'select', true);
+    if (!get('speed')) Playroom.setState('speed', 1, true);
+    if (get('elapsed') == null) Playroom.setState('elapsed', 0, true);
+  }
+  setInterval(render, 500);
+  setInterval(hostTick, 1000);
+  render();
+}
+const $root = appEl;
+
+/* ---------- 방장: 시간 + 명령 처리 + 일일 갱신 ---------- */
+function loadWorld() {
+  const sects = get('sects'), nodes = get('nodes');
+  if (!sects || !nodes) return null;
+  return { sects: clone(sects), nodes: clone(nodes), marches: clone(get('marches') || []), log: clone(get('log') || []),
+           colors: get('colors') || {}, nextId: get('nextId') || 0, elapsed: 0, d: 1 };
+}
+
+function hostTick() {
+  if (!Playroom.isHost() || get('phase') !== 'play') { lastTick = null; return; }
+  const now = Date.now();
+  if (lastTick === null) { lastTick = now; return; }
+  const dt = Math.min(300, (now - lastTick) / 1000); lastTick = now;
+  const elapsed = (get('elapsed') || 0) + dt * (get('speed') || 1);
+  Playroom.setState('elapsed', elapsed, true);
+
+  const W = loadWorld(); if (!W) return;
+  ONLINE = new Set(players.map(p => p.id));
+  W.elapsed = elapsed; W.d = Math.floor(elapsed / DAY_SECONDS) + 1;
+  const before = JSON.stringify([W.sects, W.nodes, W.marches, W.log, W.nextId]);
+
+  // 1) 플레이어 명령
+  const proc = clone(get('proc') || {}); let procChanged = false;
+  for (const p of players) {
+    const q = p.getState('cmds') || [], last = proc[p.id] || 0;
+    for (const c of q) {
+      if (c.n > (proc[p.id] || 0)) { applyCmd(W, p.id, c); proc[p.id] = c.n; procChanged = true; }
+    }
+  }
+  if (procChanged) Playroom.setState('proc', proc, true);
+
+  // 2) 도착한 병력 전투
+  const due = W.marches.filter(m => m.arriveAt <= elapsed);
+  W.marches = W.marches.filter(m => m.arriveAt > elapsed);
+  for (const m of due) resolveMarch(W, m);
+
+  // 3) 하루가 지났으면 일일 갱신
+  const realDay = W.d;
+  let done = get('processedDay') || 1; const startDone = done;
+  while (done < realDay) { done++; dailyUpdate(W, done); }
+  W.d = realDay;
+  if (done !== startDone) Playroom.setState('processedDay', done, true);
+
+  checkEnd(W);
+
+  if (JSON.stringify([W.sects, W.nodes, W.marches, W.log, W.nextId]) !== before) {
+    Playroom.setState('sects', W.sects, true);
+    Playroom.setState('nodes', W.nodes, true);
+    Playroom.setState('marches', W.marches, true);
+    Playroom.setState('log', W.log, true);
+    Playroom.setState('nextId', W.nextId, true);
+  }
+  if (W.winner) { Playroom.setState('winner', W.winner, true); Playroom.setState('phase', 'end', true); }
+}
+
+/* ---------- 행동 ---------- */
+function pickSect(name) {
+  const takenBy = players.find(p => p.getState('sect') === name);
+  if (takenBy && takenBy.id !== Playroom.myPlayer().id) return;
+  Playroom.myPlayer().setState('sect', name, true);
+}
+
+function startGame() {
+  if (!Playroom.isHost()) return;
+  const picks = {};
+  for (const name in SECTS) {
+    const o = players.find(p => p.getState('sect') === name);
+    if (o) picks[name] = { id: o.id, name: o.getProfile().name };
+  }
+  const W = makeWorld(picks);
+  logPush(W, '🔥 천하쟁패가 시작되었다!', 'sys');
+  const proc = {};
+  for (const p of players) { const q = p.getState('cmds') || []; proc[p.id] = q.length ? q[q.length - 1].n : 0; }
+  Playroom.setState('proc', proc, true);
+  Playroom.setState('sects', W.sects, true);
+  Playroom.setState('nodes', W.nodes, true);
+  Playroom.setState('marches', [], true);
+  Playroom.setState('log', W.log, true);
+  Playroom.setState('colors', W.colors, true);
+  Playroom.setState('nextId', 0, true);
+  Playroom.setState('processedDay', 1, true);
+  Playroom.setState('elapsed', 0, true);
+  Playroom.setState('winner', null, true);
+  Playroom.setState('phase', 'play', true);
+}
+
+function send(c) {
+  const me = Playroom.myPlayer();
+  const q = (me.getState('cmds') || []).slice(-14);
+  q.push(Object.assign({}, c, { n: Date.now() * 100 + (cmdCounter++ % 100) }));
+  me.setState('cmds', q, true);
+  toast('명령을 보냈어요');
+}
+
+$root.addEventListener('click', e => {
+  const el = e.target.closest('[data-act]');
+  if (!el) return;
+  const d = el.dataset;
+  switch (d.act) {
+    case 'tab': ui.tab = d.tab; break;
+    case 'node': ui.node = d.id; break;
+    case 'pick': pickSect(d.name); break;
+    case 'start': startGame(); break;
+    case 'speed': if (Playroom.isHost()) Playroom.setState('speed', Number(d.v), true); break;
+    case 'recruit': send({ t: 'recruit', n: Number(d.n) }); break;
+    case 'train': send({ t: 'train', i: Number(d.i), n: Number(d.n) }); break;
+    case 'org': send({ t: 'org', o: d.o, d: Number(d.d) }); break;
+    case 'art': send({ t: 'art', i: Number(d.i) }); break;
+    case 'weapon': send({ t: 'weapon' }); break;
+    case 'march': send({ t: 'march', to: d.to, mode: d.mode }); break;
+    case 'kill': send({ t: 'kill', target: d.target }); break;
+  }
+  render();
+});
+
+/* ---------- 화면 그리기 ---------- */
+function render() {
+  ONLINE = new Set(players.map(p => p.id));
+  const phase = get('phase');
+  let html;
+  try { html = phase === 'play' ? renderPlay() : phase === 'end' ? renderEnd() : renderSelect(); }
+  catch (e) { html = '<div class="panel">화면 오류: ' + esc(e.message) + '</div>'; }
+  if (ui.toast && Date.now() - ui.toastAt < 2000) html += `<div class="toast">${esc(ui.toast)}</div>`;
+  if (html !== lastHtml) { $root.innerHTML = html; lastHtml = html; }
+}
+
+function renderSelect() {
+  const me = Playroom.myPlayer(), host = Playroom.isHost();
+  const allPicked = players.length > 0 && players.every(p => p.getState('sect'));
+  const cards = Object.keys(SECTS).map(name => {
+    const owner = players.find(p => p.getState('sect') === name);
+    const mine = owner && owner.id === me.id;
+    const cls = 'card' + (mine ? ' mine' : '') + (owner && !mine ? ' taken' : '');
+    const arts = SECTS[name].arts.map(a => `${a.n}(${a.k})`).join(', ');
+    return `<div class="${cls}" data-act="pick" data-name="${name}">
+      <b>${name}</b><div class="dim">${SECTS[name].desc}</div>
+      <div class="dim" style="margin-top:4px">고유 무공: ${arts}</div>
+      <div style="margin-top:6px">${owner ? '선택: ' + esc(owner.getProfile().name) : '<span class="dim">비어 있음 (선택 안 되면 AI)</span>'}</div></div>`;
+  }).join('');
+  const list = players.map(p => `<div>${esc(p.getProfile().name)}${p.id === me.id ? '<span class="tag me">나</span>' : ''} — ${p.getState('sect') || '<span class="dim">아직 선택 안 함</span>'}</div>`).join('');
+  return `
+    <div class="panel"><h1>⚔️ 강호대전: 천하쟁패</h1><div class="dim">문파를 고르세요. 아무도 안 고른 문파는 AI가 운영합니다. 친구끼리도 서로 싸울 수 있어요.</div></div>
+    <div class="panel"><h3>구파일방</h3><div class="grid">${cards}</div></div>
+    <div class="panel"><h3>접속자 (${players.length}/${MAX_PLAYERS})</h3>${list}
+      <div style="margin-top:10px">${host
+        ? `<button data-act="start" ${allPicked ? '' : 'disabled'}>게임 시작</button> <span class="dim">${allPicked ? '' : '모든 접속자가 문파를 골라야 시작할 수 있어요'}</span>`
+        : '<span class="dim">방장이 게임을 시작할 때까지 기다려 주세요</span>'}</div></div>`;
+}
+
+function renderEnd() {
+  const w = get('winner');
+  return `<div class="panel"><h1>🏆 천하통일!</h1>
+    <div style="font-size:18px">${w ? esc(w.ownerName) + ' — ' + w.sects.map(esc).join(', ') : ''}</div>
+    <div class="dim" style="margin-top:8px">새 게임을 하려면 방을 새로 만들어 주세요.</div></div>`;
+}
+
+function readWorld() {
+  const sects = get('sects'), nodes = get('nodes');
+  if (!sects || !nodes) return null;
+  const elapsed = get('elapsed') || 0;
+  return { sects, nodes, marches: get('marches') || [], log: get('log') || [], elapsed, d: Math.floor(elapsed / DAY_SECONDS) + 1 };
+}
+function mySect(W) {
+  const id = Playroom.myPlayer().id;
+  const n = Object.keys(W.sects).find(k => W.sects[k].owner === id && !W.sects[k].defeated);
+  return n ? W.sects[n] : null;
+}
+function fuzz(v, key) {
+  let h = 0; for (const ch of String(key)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  const x = v * (0.75 + (h % 50) / 100);
+  const p = Math.pow(10, Math.max(0, String(Math.floor(x)).length - 2));
+  return '약 ' + (Math.round(x / p) * p).toLocaleString();
+}
+const btn = (attrs, label, dis) => `<button class="sub" ${attrs} ${dis ? 'disabled' : ''}>${label}</button>`;
+
+function renderPlay() {
+  const W = readWorld();
+  if (!W) return '<div class="panel">세계를 불러오는 중...</div>';
+  const me = mySect(W), speed = get('speed') || 1, host = Playroom.isHost();
+  const inDay = W.elapsed % DAY_SECONDS, left = DAY_SECONDS - inDay;
+  const tleft = String(Math.floor(left / 60)).padStart(2, '0') + ':' + String(Math.floor(left % 60)).padStart(2, '0');
+  const speedBtns = host ? `<div class="row"><span class="dim">시간 배속:</span>${[1, 4, 15, 60, 900].map(v => `<button class="sub ${speed === v ? 'on' : ''}" data-act="speed" data-v="${v}">×${v}</button>`).join('')}<span class="dim">(×1 = 하루 15분)</span></div>` : '';
+
+  const head = `<div class="panel top">
+    <div><h2 style="margin:0">⚔️ 강호대전</h2><div class="dim">${me ? `내 문파: <b class="gold">${me.name}</b>${me.leaderDead ? ' <span class="red">(문주 전사 — 새 문주 추대 중)</span>' : ''}` : '문파 없음 (관전 중)'}</div></div>
+    <div>${me ? `💰 금 <b class="gold">${num(me.gold)}</b> <span class="dim">(+${num(incomeOf(W, me))}/일)</span>` : ''}</div>
+    <div style="min-width:220px"><b>${W.d}일차</b> <span class="dim">다음 날까지 ${tleft}</span><div class="bar"><div style="width:${(inDay / DAY_SECONDS) * 100}%"></div></div></div></div>
+    ${speedBtns ? `<div class="panel">${speedBtns}</div>` : ''}`;
+
+  const tabs = [['map', '🗺️ 강호 지도'], ['sect', '🏯 문파·육성'], ['org', '👥 조직'], ['arts', '📜 무공·무기'], ['world', '🌏 천하 형세']];
+  const tabBar = `<div class="panel row">${tabs.map(([k, l]) => `<button class="sub ${ui.tab === k ? 'on' : ''}" data-act="tab" data-tab="${k}">${l}</button>`).join('')}</div>`;
+
+  let body = '';
+  if (ui.tab === 'map') body = tabMap(W, me);
+  else if (!me) body = '<div class="panel">문파가 없어서 관전만 할 수 있어요. 지도와 천하 형세 탭을 봐주세요.</div>';
+  else if (ui.tab === 'sect') body = tabSect(W, me);
+  else if (ui.tab === 'org') body = tabOrg(W, me);
+  else if (ui.tab === 'arts') body = tabArts(W, me);
+  if (ui.tab === 'world') body = tabWorld(W, me);
+
+  const log = W.log.slice(-14).reverse().map(l => `<div>[${l.d}일] ${esc(l.t)}</div>`).join('');
+  return head + tabBar + body + `<div class="panel log"><h3>📰 강호 소식</h3>${log || '<div class="dim">아직 소식이 없습니다</div>'}</div>`;
+}
+
+/* ----- 지도 ----- */
+function tabMap(W, me) {
+  const el = W.elapsed, day = W.d;
+  const myNodes = me ? ownedNodes(W, me.name) : [];
+  const attackable = new Set();
+  if (me) for (const id in NODES) {
+    if (!visible(id, day) || W.nodes[id].owner === me.name) continue;
+    if (ADJ[id].some(a => myNodes.includes(a))) attackable.add(id);
+  }
+  let svg = `<svg viewBox="0 0 760 520" style="width:100%;background:#1b1612;border-radius:8px;border:1px solid var(--line)">`;
+  for (const [a, b] of EDGES) {
+    if (!visible(a, day) || !visible(b, day)) continue;
+    svg += `<line x1="${NODES[a].x}" y1="${NODES[a].y}" x2="${NODES[b].x}" y2="${NODES[b].y}" stroke="#4a3a2c" stroke-width="2"/>`;
+  }
+  for (const m of W.marches) {
+    const f = NODES[m.from], t = NODES[m.to], s = W.sects[m.sect];
+    const pr = Math.min(1, Math.max(0, (el - m.start) / Math.max(1, m.arriveAt - m.start)));
+    const x = f.x + (t.x - f.x) * pr, y = f.y + (t.y - f.y) * pr;
+    svg += `<line x1="${f.x}" y1="${f.y}" x2="${t.x}" y2="${t.y}" stroke="${s.color}" stroke-width="3" stroke-dasharray="6 5"/>`;
+    svg += `<circle cx="${x}" cy="${y}" r="7" fill="${s.color}" stroke="#fff" stroke-width="1.5"><title>${esc(m.sect)} 병력</title></circle>`;
+  }
+  for (const id in NODES) {
+    if (!visible(id, day)) continue;
+    const N = NODES[id], ns = W.nodes[id], own = ns.owner ? W.sects[ns.owner] : null;
+    const color = own ? own.color : '#6b5c4b';
+    const r = N.type === 'sect' ? 22 : 16, sel = ui.node === id;
+    svg += `<g data-act="node" data-id="${id}" style="cursor:pointer">`;
+    if (attackable.has(id)) svg += `<circle cx="${N.x}" cy="${N.y}" r="${r + 7}" fill="none" stroke="#d9b46c" stroke-width="2" stroke-dasharray="4 3"/>`;
+    svg += `<circle cx="${N.x}" cy="${N.y}" r="${r}" fill="${color}" stroke="${sel ? '#fff' : '#000'}" stroke-width="${sel ? 4 : 2}"/>`;
+    svg += `<text x="${N.x}" y="${N.y + 6}" text-anchor="middle" font-size="${N.type === 'sect' ? 20 : 15}">${NODE_ICON[N.type]}</text>`;
+    svg += `<text x="${N.x}" y="${N.y + r + 15}" text-anchor="middle" font-size="12" fill="#eadfce">${id}${own && own.owner !== 'AI' ? ' ·' + esc(own.ownerName) : ''}</text></g>`;
+  }
+  svg += '</svg>';
+
+  const info = ui.node ? nodeInfo(W, me, ui.node, attackable) : '<div class="dim">지도에서 지역을 눌러 보세요. 금색 점선 테두리는 공격할 수 있는 지역이에요.</div>';
+  const mine = me ? W.marches.filter(m => m.sect === me.name).map(m => `<div>🚩 ${m.to} 방면 행군 중 (도착까지 ${Math.max(0, Math.round(m.arriveAt - el))}초)</div>`).join('') : '';
+  return `<div class="panel">${svg}</div><div class="two"><div class="panel">${info}</div><div class="panel"><h3>내 출정 부대</h3>${mine || '<div class="dim">출정 중인 부대가 없어요 (최대 2개)</div>'}</div></div>`;
+}
+
+function nodeInfo(W, me, id, attackable) {
+  const N = NODES[id], ns = W.nodes[id], own = ns.owner ? W.sects[ns.owner] : null;
+  const scouts = me && (me.orgs['정찰대'] || 0) >= 10, ownMine = me && ns.owner === me.name;
+  const def = defPowerOf(W, id, W.d);
+  const defTxt = ownMine || scouts ? num(def) : fuzz(def, id + W.d);
+  const hq = !!SECTS[id] && !W.sects[id].defeated;
+  let h = `<h3>${NODE_ICON[N.type]} ${id}</h3>
+    <div class="dim">${NODE_LABEL[N.type]}${hq ? ' · ' + SECTS[id].desc : ''}</div>
+    <div>소유: ${own ? `<b style="color:${own.color}">${own.name}</b> (${own.owner === 'AI' ? 'AI' : esc(own.ownerName)})` : '주인 없음'}</div>
+    <div>하루 수입: 금 +${N.income}</div>
+    <div>방어 전력: <b>${defTxt}</b>${!scouts && !ownMine ? ' <span class="dim">(정찰대 10명 이상이면 정확히 보임)</span>' : ''}</div>`;
+  if (hq && own) {
+    const strong = own.counts.map((c, i) => [REALMS[i], c]).slice(4).filter(x => x[1] > 0).map(x => `${x[0]} ${x[1]}명`).join(', ');
+    h += `<div>강자: ${strong || '초절정 이상 없음'}</div>${own.leaderDead ? '<div class="red">장문인 전사 상태</div>' : ''}`;
+    if (isOffline(own)) h += '<div class="dim">(접속 안 한 문파: 방어력 +30%)</div>';
+  }
+  if (me && attackable.has(id)) {
+    const full = W.marches.filter(m => m.sect === me.name).length >= 2;
+    const modes = [['mass', '대군 출진', '삼류~일류 80%'], ['elite', '정예 출진', '절정 이상 전원'], ['all', '전군 출진', '전체 70%']];
+    h += '<div style="margin-top:8px"><b>출진</b></div>';
+    for (const [m, label, desc] of modes) {
+      const P = power(makeUnits(me, m)) * atkMult(me);
+      h += `<div>${btn(`data-act="march" data-to="${id}" data-mode="${m}"`, label, full || P <= 0)} <span class="dim">${desc} · 공격 전력 ${num(P)}</span></div>`;
+    }
+    if (full) h += '<div class="red">부대를 이미 2개 출정시켰어요</div>';
+  } else if (me && ns.owner !== me.name) {
+    h += '<div class="dim" style="margin-top:8px">내 영토와 맞닿아 있지 않아서 아직 공격할 수 없어요</div>';
+  }
+  return h;
+}
+
+/* ----- 문파·육성 ----- */
+function tabSect(W, me) {
+  const c = me.counts, total = sum(c), org = orgTotal(me);
+  const away = sum(W.marches.filter(m => m.sect === me.name).map(m => sum(m.units)));
+  const rows = REALMS.map((r, i) => {
+    const train = i <= 7 ? [1, 5, 20].map(n => btn(`data-act="train" data-i="${i}" data-n="${n}"`, `${n}명`, me.gold < TRAIN_COST[i])).join('') + ` <span class="dim">1명당 ${num(TRAIN_COST[i])}금</span>` : '<span class="dim">최상위</span>';
+    return `<tr><td>${r}</td><td>${num(c[i])}</td><td style="text-align:left">${i <= 7 ? '지도 → ' + REALMS[i + 1] : ''} ${train}</td></tr>`;
+  }).reverse().join('');
+  return `<div class="panel"><h3>🏯 ${me.name} 무인 현황</h3>
+    <div class="dim">대규모로 키울지, 소수정예로 키울지는 문주의 선택이에요. 삼류를 늘리면 싸고 빠르지만 약하고, 높은 경지는 비싸고 느리지만 전투에서 훨씬 오래 살아남아요.</div>
+    <div style="margin:8px 0">모집: ${btn('data-act="recruit" data-n="100"', '삼류 100명 (100금)', me.gold < 100)}${btn('data-act="recruit" data-n="500"', '삼류 500명 (500금)', me.gold < 500)}</div>
+    <table><tr><th>경지</th><th>인원</th><th style="text-align:left">직접 지도(금으로 한 단계 승급)</th></tr>${rows}
+    <tr><th>합계</th><th>${num(total)}</th><th style="text-align:left" class="dim">조직 배치 ${num(org)}명 · 출정 중 ${num(away)}명 포함 아님</th></tr></table>
+    <div class="dim" style="margin-top:8px">⚙️ 하루마다 자연 승급도 일어나요 (초반은 빠르고 초절정 이후는 매우 느림). 승급 확률은 제자단, 약초밭으로 높일 수 있어요.</div>
+    <div style="margin-top:8px">공격 배율 <b>×${atkMult(me).toFixed(2)}</b> · 방어 배율 <b>×${defMult(me).toFixed(2)}</b> · 전투력 합계 <b>${num(power(avail(me)))}</b></div></div>`;
+}
+
+/* ----- 조직 ----- */
+function tabOrg(W, me) {
+  const max = Math.floor(me.counts[0] * 0.8), used = orgTotal(me), scouts = (me.orgs['정찰대'] || 0) >= 10;
+  const rows = ORGS.map(([n, d]) => `<tr><td>${n}<div class="dim">${d}</div></td><td>${num(me.orgs[n] || 0)}</td>
+    <td style="text-align:left">${[-10, -1, 1, 10].map(x => btn(`data-act="org" data-o="${n}" data-d="${x}"`, (x > 0 ? '+' : '') + x)).join('')}</td></tr>`).join('');
+  const ready = (me.orgs['암살대'] || 0) >= 5 && W.d > me.lastAssDay;
+  const targets = Object.keys(W.sects).filter(n => n !== me.name && !W.sects[n].defeated && !W.sects[n].leaderDead).map(n => {
+    const t = W.sects[n];
+    return `<div>${btn(`data-act="kill" data-target="${n}"`, '암살 시도', !ready)} ${n} <span class="dim">(${t.owner === 'AI' ? 'AI' : esc(t.ownerName)}) 성공률 ${scouts ? Math.round(assassinChance(me, t) * 100) + '%' : '불명 (정찰대 필요)'}</span></div>`;
+  }).join('');
+  return `<div class="panel"><h3>👥 문파 조직</h3>
+    <div class="dim">삼류 무인을 각 조직에 배치해요. 배치된 인원은 전투에 참가하지 않아요. (삼류의 80%까지 배치 가능) 배치 ${num(used)} / ${num(max)}</div>
+    <table><tr><th>조직</th><th>인원</th><th style="text-align:left">조정</th></tr>${rows}</table></div>
+    <div class="panel"><h3>🗡️ 암살 작전</h3>
+    <div class="dim">암살대 5명 이상, 하루에 한 번. 성공하면 장문인이 전사해 그 문파가 크게 약해져요. 실패하면 암살대 60%를 잃어요. ${ready ? '' : '<span class="red">(지금은 불가능: 암살대 부족 또는 오늘 이미 시도)</span>'}</div>${targets || '<div class="dim">대상 없음</div>'}</div>`;
+}
+
+/* ----- 무공·무기 ----- */
+function tabArts(W, me) {
+  const arts = SECTS[me.name].arts.map((a, i) => {
+    const lv = me.arts[i], cost = artCost(me, i), k = KIND[a.k];
+    return `<tr><td><b>${a.n}</b><div class="dim">${a.k} · 한 성마다 공격 +${Math.round(k[0] * 100)}% / 방어 +${Math.round(k[1] * 100)}%</div></td>
+      <td>${'★'.repeat(lv)}${'☆'.repeat(MAX_ART - lv)}</td>
+      <td style="text-align:left">${lv >= MAX_ART ? '<span class="green">대성</span>' : btn(`data-act="art" data-i="${i}"`, `연구 (${num(cost)}금)`, me.gold < cost)}</td></tr>`;
+  }).join('');
+  const w = WEAPONS[me.weapon], nw = WEAPONS[me.weapon + 1];
+  return `<div class="panel"><h3>📜 ${me.name} 고유 무공</h3>
+    <div class="dim">다른 문파는 이 무공을 배울 수 없어요. 장서각 인원이 많으면 연구비가 줄어들어요.</div>
+    <table><tr><th>무공</th><th>수련</th><th style="text-align:left">연구</th></tr>${arts}</table></div>
+    <div class="panel"><h3>🗡️ 무기고</h3>
+    <div>현재: <b class="gold">[${w.g}] ${w.n}</b> <span class="dim">공격 ×${w.atk} · 방어 +${Math.round(w.def * 100)}%</span></div>
+    <div style="margin-top:6px">${nw ? btn('data-act="weapon"', `[${nw.g}] ${nw.n}(으)로 강화 (${num(nw.cost)}금)`, me.gold < nw.cost) + `<span class="dim"> 공격 ×${nw.atk} · 방어 +${Math.round(nw.def * 100)}%</span>` : '<span class="green">최고 등급입니다</span>'}</div></div>`;
+}
+
+/* ----- 천하 형세 ----- */
+function tabWorld(W, me) {
+  const scouts = me && (me.orgs['정찰대'] || 0) >= 10;
+  const list = Object.keys(W.sects).map(n => W.sects[n]).filter(s => !s.defeated).map(s => {
+    let top = 0; for (let i = 8; i >= 0; i--) if (s.counts[i] > 0) { top = i; break; }
+    return { s, top, pw: power(s.counts) };
+  }).sort((a, b) => b.top - a.top || b.pw - a.pw);
+  const rows = list.map(({ s, top }) => {
+    const mineRow = me && s.name === me.name, exact = mineRow || scouts;
+    const strong = s.counts.map((c, i) => [REALMS[i], c]).slice(4).filter(x => x[1] > 0).map(x => `${x[0]} ${x[1]}`).join(' / ') || '-';
+    const jeol = sum(s.counts.slice(3)), total = sum(s.counts);
+    const tag = s.owner === 'AI' ? '<span class="tag ai">AI</span>' : `<span class="tag ${mineRow ? 'me' : ''}">${esc(s.ownerName)}</span>`;
+    return `<tr><td><span style="color:${s.color}">●</span> ${s.name}${tag}${s.leaderDead ? ' <span class="red">☠</span>' : ''}</td>
+      <td>${REALMS[top]}</td><td style="text-align:left">${strong}</td>
+      <td>${exact ? num(jeol) : fuzz(jeol, s.name + 'j' + W.d)}</td><td>${exact ? num(total) : fuzz(total, s.name + 't' + W.d)}</td></tr>`;
+  }).join('');
+  const dead = Object.keys(W.sects).filter(n => W.sects[n].defeated).map(n => `${n}`).join(', ');
+  return `<div class="panel"><h3>🌏 천하 형세 (강한 순)</h3>
+    <div class="dim">초절정 이상의 강자는 누구나 볼 수 있어요. 그 아래 인원은 정찰대 10명 이상이어야 정확히 보여요. ☠ = 장문인 전사</div>
+    <table><tr><th>문파</th><th>최고 경지</th><th style="text-align:left">강자 (초절정 이상)</th><th>절정 이상</th><th>전체</th></tr>${rows}</table>
+    ${dead ? `<div class="dim" style="margin-top:8px">멸문: ${dead}</div>` : ''}</div>`;
+}
+
+boot();
+</script>
+</body>
+</html>
