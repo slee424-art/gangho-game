@@ -109,9 +109,10 @@ const DAY_SECONDS = 15 * 60;                 // 실제 15분 = 게임 1일
 const MAX_PLAYERS = 6;
 const POWER = [1, 3, 10, 35, 120, 420, 1500, 5000, 18000];            // 경지별 1인 전투력
 const PROMOTE = [0.040, 0.030, 0.020, 0.008, 0.003, 0.0007, 0.0005, 0.0001]; // 하루 자연 승급 확률
-const TRAIN_COST = [2, 5, 14, 50, 180, 700, 3000, 12000];            // 직접 지도 비용(1명당 금)
+const TRAIN_COST = [2, 5, 750, 3000, 12500, 50000, 200000, 750000]; // 일류 이상은 영단(PILL_COST) 가격의 절반, 성공 확률 1/3            // 직접 지도 비용(1명당 금)
 const MAX_ART = 5;
-const UPKEEP = [0.04, 0.08, 0.2, 0.8, 3, 10, 30, 80, 200]; // 경지별 1인 하루 유지비(금)
+const RECRUIT_COST = 70;   // 삼류 1명 모집 비용 (50명 = 3,500금)
+const UPKEEP = [0.02, 0.04, 0.1, 0.4, 1.5, 5, 15, 40, 100]; // 경지별 1인 하루 유지비(금)
 const upkeepOf = s => Math.round(s.counts.reduce((a, c, i) => a + c * UPKEEP[i], 0));
 const PILL_NAME = ['','','소환단','대환단','태청단','자소단','만년설삼환','천년하수오환'];
 const PILL_COST = [0,0,1500,6000,25000,100000,400000,1500000];
@@ -134,7 +135,7 @@ const KIND = {
   '외공':[0.00,0.06], '내공':[0.03,0.03], '진법':[0.01,0.05], '경공':[0.02,0.02], '보법':[0.01,0.04],
 };
 
-Object.assign(KIND, {'도법':[0.055,0.01],'창법':[0.05,0.015],'암기':[0.06,0.0],'독공':[0.04,0.02]});
+Object.assign(KIND, {'도법':[0.055,0.01],'창법':[0.05,0.015],'암기':[0.05,0.0],'독공':[0.04,0.02]});
 // 무기 등급 (문파 무기고 수준)
 const WEAPONS = [
   { g:'일반', n:'일반 철검',      atk:1.00, def:0.00, cost:0 },
@@ -149,13 +150,13 @@ const WEAPONS = [
 const SECTS = {
   '소림파': {highTalent:0.82,core:true,sect:'소림파',siteName:'본산', traits:{"pros": ["금강불괴: 방어 배율 +12%", "외공 수련 특화", "초기 하급 무인 대규모 보유", "장기 수비전에서 강함"], "cons": ["기동전과 추격전에 취약", "고경지 승급 속도 느림", "무공 연구 비용 부담", "재정 수입이 적음"], "stats": {"atk": 0.96, "def": 1.12, "income": 0.92, "promote": 0.9, "recruit": 1.12, "artCost": 1.1}}, desc:'방어력, 외공, 대규모 병력', base:[900,300,90,20,4,1,0,0,0],
     arts:[{n:'나한복호권',k:'권법'},{n:'금강불괴신공',k:'외공'},{n:'달마검법',k:'검법'}] },
-  '무당파': {highTalent:1.12,core:true,sect:'무당파',siteName:'본산', traits:{"pros": ["태극의 조화: 공격·방어 균형", "내공 수련 효율 우수", "장기전에 강함", "경지 상승이 안정적"], "cons": ["초기 병력 규모가 작음", "폭발적인 공격력 부족", "영토 확장 속도 느림", "무공 연구에 자금 소모"], "stats": {"atk": 1.05, "def": 1.06, "income": 0.96, "promote": 1.05, "recruit": 0.94, "artCost": 1.06}}, desc:'검술, 태극, 내공', base:[400,200,90,30,6,2,0,0,0],
+  '무당파': {highTalent:1.0,core:true,sect:'무당파',siteName:'본산', traits:{"pros": ["태극의 조화: 공격·방어 균형", "내공 수련 효율 우수", "장기전에 강함", "경지 상승이 안정적"], "cons": ["초기 병력 규모가 작음", "폭발적인 공격력 부족", "영토 확장 속도 느림", "무공 연구에 자금 소모"], "stats": {"atk": 1.03, "def": 1.03, "income": 0.96, "promote": 1.0, "recruit": 0.94, "artCost": 1.06}}, desc:'검술, 태극, 내공', base:[400,200,90,27,5,1,0,0,0],
     arts:[{n:'태극검',k:'검법'},{n:'태극권',k:'권법'},{n:'양의심공',k:'내공'}] },
   '화산파': {highTalent:1.35,core:true,sect:'화산파',siteName:'본산', traits:{"pros": ["매화검법: 공격 배율 +12%", "소수정예 자질: 승급 확률 ×1.5", "고경지 무인 비율이 높음", "기습적인 검격에 강함"], "cons": ["신규 무인 충원 속도 느림", "방어전에서 불리함", "영토 수입 의존도가 큼", "병력 손실 회복이 느림"], "stats": {"atk": 1.12, "def": 1.0, "income": 1.0, "promote": 1.5, "recruit": 0.95, "artCost": 1.0}}, desc:'검술, 소수정예 · 무인 자질 우수', talent:1.5, talentLabel:'소수정예 자질 보정 ×1.5', base:[200,120,70,30,8,2,0,0,0],
     arts:[{n:'매화검법',k:'검법'},{n:'자하신공',k:'내공'},{n:'암향표영',k:'경공'}] },
   '종남파': {highTalent:0.95,core:true,sect:'종남파',siteName:'본산', traits:{"pros": ["천강북두진: 방어 배율 +8%", "진법 연구 비용 절감", "검법과 내공의 균형", "거점 방어에 유리"], "cons": ["공격 특화 무공이 부족", "초기 고수 수가 적음", "병력 증원 속도 보통 이하", "기동력이 부족함"], "stats": {"atk": 1.02, "def": 1.08, "income": 0.96, "promote": 0.98, "recruit": 0.94, "artCost": 0.88}}, desc:'검법, 진법', base:[350,180,80,25,5,1,0,0,0],
     arts:[{n:'전진검법',k:'검법'},{n:'천강북두진',k:'진법'},{n:'선천공',k:'내공'}] },
-  '아미파': {highTalent:1.08,core:true,sect:'아미파',siteName:'본산', traits:{"pros": ["유연한 검술과 경공: 공격 +4%", "수련 효율이 안정적", "무공 연구 비용 절감", "균형 잡힌 전투 운용"], "cons": ["대규모 병력전에 약함", "초기 절정급 무인 부족", "경제력이 강하지 않음", "정면 돌파력이 낮음"], "stats": {"atk": 1.04, "def": 1.02, "income": 0.95, "promote": 1.06, "recruit": 0.94, "artCost": 0.9}}, desc:'경공, 검술, 회복', base:[350,180,80,25,5,1,0,0,0],
+  '아미파': {highTalent:1.15,core:true,sect:'아미파',siteName:'본산', traits:{"pros": ["유연한 검술과 경공: 공격 +7%", "수련 효율이 안정적", "무공 연구 비용 절감", "균형 잡힌 전투 운용"], "cons": ["대규모 병력전에 약함", "초기 절정급 무인 부족", "경제력이 강하지 않음", "정면 돌파력이 낮음"], "stats": {"atk": 1.07, "def": 1.05, "income": 1.03, "promote": 1.08, "recruit": 1.02, "artCost": 0.9}}, desc:'경공, 검술, 회복', base:[350,180,80,28,6,1,0,0,0],
     arts:[{n:'아미검법',k:'검법'},{n:'금정신공',k:'내공'},{n:'소요경공',k:'경공'}] },
   '개방':   {highTalent:0.62,core:true,sect:'개방',siteName:'본산', traits:{"pros": ["거대 조직: 무인 충원 +25%", "방대한 인맥: 수입 +20%", "초기 인원과 하급 무인 압도", "소모전·장기전에 강함"], "cons": ["자질 편차: 자연 승급 확률 ×0.75", "정예 전투력 부족", "개별 무인 방어력 낮음", "고급 무공 연구 효율 낮음"], "stats": {"atk": 0.93, "def": 0.9, "income": 1.2, "promote": 0.75, "recruit": 1.25, "artCost": 1.08}}, desc:'정보력, 인맥, 거대 조직 · 자질 편차 큼', talent:0.75, talentLabel:'대규모 조직 자질 보정 ×0.75', base:[1200,250,60,12,3,1,0,0,0],
     arts:[{n:'항룡십팔장',k:'장법'},{n:'타구봉법',k:'봉법'},{n:'취팔선보',k:'보법'}] },
@@ -171,7 +172,7 @@ const H = (n,hi,desc,base,arts,pros,cons,s) => ({highTalent:hi,core:true,house:t
 Object.assign(SECTS, {
  '남궁세가':H('남궁세가',1.2,'제왕검형 · 검가의 명예, 공수 겸비',[500,260,100,32,6,1,0,0,0],[{n:'제왕검형',k:'검법'},{n:'창궁무애검법',k:'검법'},{n:'천외신공',k:'내공'}],['제왕검형: 공격 +8%','검가의 자질: 승급 ×1.1','탄탄한 재정 +10%'],['명문의 자존심: 충원 느림','방어는 평범','무공 연구비 부담']  ,[1.08,1.02,1.1,1.1,0.9,1.05]),
  '하북팽가':H('하북팽가',0.95,'도법과 외공 · 정면 돌파의 가문',[600,260,95,28,5,1,0,0,0],[{n:'오호단문도',k:'도법'},{n:'혼원벽력도',k:'도법'},{n:'금강외공',k:'외공'}],['오호단문도: 공격 +10%','다수의 도객 보유','외공으로 단단함'],['기동력 부족','승급 속도 느림','연구 효율 낮음'],[1.1,1.04,1.0,0.92,1.05,1.05]),
- '사천당문':H('사천당문',1.05,'암기와 독 · 암살과 기습의 가문',[350,200,80,26,5,1,0,0,0],[{n:'만천화우',k:'암기'},{n:'칠독장',k:'독공'},{n:'귀영보',k:'보법'}],['암기·독으로 공격 +10%','암살에 특화','소수정예 운용'],['방어 배율 -10%','대규모전 불리','병력 충원 느림'],[1.1,0.9,1.05,1.0,0.9,1.0]),
+ '사천당문':H('사천당문',1.05,'암기와 독 · 암살과 기습의 가문',[350,200,80,26,5,1,0,0,0],[{n:'만천화우',k:'암기'},{n:'칠독장',k:'독공'},{n:'귀영보',k:'보법'}],['암기·독으로 공격 +6%','암살에 특화','소수정예 운용'],['방어 배율 -10%','대규모전 불리','병력 충원 느림'],[1.06,0.9,1.0,1.0,0.9,1.0]),
  '산동악가':H('산동악가',1.0,'창법과 충의 · 굳건한 방진',[550,250,90,30,5,1,0,0,0],[{n:'악가창법',k:'창법'},{n:'멸마권',k:'권법'},{n:'충의심공',k:'내공'}],['악가창법으로 방어·공격 균형','충원 안정적','방어 +10%'],['수입이 다소 낮음','기동전 약함','화려한 무공 부족'],[1.04,1.1,0.95,1.02,1.02,1.0]),
  '제갈세가':H('제갈세가',1.1,'진법과 지략 · 재정과 연구의 가문',[300,180,85,30,7,2,0,0,0],[{n:'팔괘진',k:'진법'},{n:'제갈신산',k:'지법'},{n:'천기신공',k:'내공'}],['수입 +15%','무공 연구비 -15%','승급 효율 +10%'],['초기 병력 적음','공격 배율 -2%','충원 느림'],[0.98,1.08,1.15,1.1,0.9,0.85]),
 });
@@ -320,10 +321,11 @@ function visible(id, day) { const a = NODES[id].appear; return !a || day >= a; }
 function ownedNodes(W, name) { return Object.keys(W.nodes).filter(id => W.nodes[id].owner === name); }
 function guardOf(id, day) { return NODES[id].guard * (1 + 0.02 * day); }
 function isOffline(s) { return s.owner !== 'AI' && ONLINE !== null && !ONLINE.has(s.owner); }
-function incomeOf(W, s) {
+function incomeOf(W, s) { return Math.max(0, grossOf(W, s) - upkeepOf(s)); }
+function grossOf(W, s) {
   let inc = 150 + (s.orgs['상단'] || 0) * 3;
   for (const id in W.nodes) if (W.nodes[id].owner === s.name) inc += NODES[id].income;
-  return Math.max(60, Math.floor(inc * ((SECTS[s.name].traits && SECTS[s.name].traits.stats.income) || 1)) - upkeepOf(s));
+  return Math.floor(inc * ((SECTS[s.name].traits && SECTS[s.name].traits.stats.income) || 1));
 }
 function defPowerOf(W, id, day) {
   const n = W.nodes[id], owner = n && n.owner, d = owner ? W.sects[owner] : null;
@@ -563,16 +565,19 @@ function applyCmd(W, pid, c) {
   const s = W.sects[name];
   switch (c.t) {
     case 'recruit': {
-      const n = Math.min([100, 500].includes(c.n) ? c.n : 0, Math.floor(s.gold));
-      s.gold -= n; s.counts[0] += n; break;
+      const n = [10, 50, 100].includes(c.n) ? c.n : 0;
+      if (!n || s.gold < n * RECRUIT_COST) break;
+      s.gold -= n * RECRUIT_COST; s.counts[0] += n; break;
     }
     case 'train': {
       const i = Number(c.i), want = Number(c.n);
       if (!(i >= 0 && i <= 7) || ![1, 5, 20].includes(want)) break;
       const real = Math.min(want, s.counts[i], Math.floor(s.gold / TRAIN_COST[i]));
       if (real <= 0) break;
-      s.gold -= real * TRAIN_COST[i]; s.counts[i] -= real; s.counts[i + 1] += real;
-      if (i + 1 >= 4) logPush(W, `📈 [${name}]에서 ${real}명이 ${REALMS[i + 1]}에 올랐다`, 'sys');
+      let ok = real; if (i >= 2) { ok = 0; for (let k = 0; k < real; k++) if (rnd() < 1 / 3) ok++; }
+      s.gold -= real * TRAIN_COST[i]; s.counts[i] -= ok; s.counts[i + 1] += ok;
+      if (i >= 2) logPush(W, `📘 [${name}] ${REALMS[i]} ${real}명 직접 지도 — ${ok ? ok + '명 성공' : '모두 실패'}`, 'sys');
+      else if (i + 1 >= 4 && ok) logPush(W, `📈 [${name}]에서 ${ok}명이 ${REALMS[i + 1]}에 올랐다`, 'sys');
       break;
     }
     case 'academy': {
@@ -649,10 +654,10 @@ function aiAct(W, name) {
   let budget = Math.floor(s.gold * 0.45);
   for (const i of [3, 2, 4, 1, 0]) {
     const cost = TRAIN_COST[i], n = Math.min(6, s.counts[i], Math.floor(budget / cost));
-    if (n > 0) { s.counts[i] -= n; s.counts[i + 1] += n; s.gold -= n * cost; budget -= n * cost; }
+    if (n > 0) { const ok = i >= 2 ? Array.from({ length: n }).filter(() => rnd() < 1 / 3).length : n; s.counts[i] -= ok; s.counts[i + 1] += ok; s.gold -= n * cost; budget -= n * cost; }
   }
-  const rec = Math.min(50, Math.floor(budget * 0.35));
-  if (rec > 0) { s.counts[0] += rec; s.gold -= rec; }
+  const rec = Math.min(10, Math.floor(budget * 0.35 / RECRUIT_COST));
+  if (rec > 0) { s.counts[0] += rec; s.gold -= rec * RECRUIT_COST; }
   const nw = WEAPONS[s.weapon + 1];
   if (nw && s.gold >= nw.cost * 1.8 && rnd() < 0.35) { s.gold -= nw.cost; s.weapon++; }
   if (rnd() < 0.35) {
@@ -922,7 +927,11 @@ $root.addEventListener('click', e => {
 });
 
 /* ---------- 화면 그리기 ---------- */
+window.addEventListener('pointerdown', () => { ui.down = true; }, true);
+window.addEventListener('pointerup', () => { setTimeout(() => { ui.down = false; }, 60); }, true);
+window.addEventListener('pointercancel', () => { ui.down = false; }, true);
 function render() {
+  if (ui.down) return;   // 버튼을 누르는 중에는 화면을 다시 그리지 않는다(클릭 씹힘 방지)
   ONLINE = new Set(players.map(p => p.id));
   const phase = get('phase');
   let html;
@@ -995,7 +1004,7 @@ function renderPlay() {
 
   const head = `<div class="panel top">
     <div><h2 style="margin:0">⚔️ 강호대전</h2><div class="dim">${me ? `내 문파: <b class="gold">${me.name}</b> <span class="tag me">${rankOf(me).label}</span>${me.leaderDead ? ' <span class="red">(문주 전사 — 새 문주 추대 중)</span>' : ''}` : '문파 없음 (관전 중)'}</div></div>
-    <div>${me ? `💰 금 <b class="gold">${num(me.gold)}</b> <span class="dim">(+${num(incomeOf(W, me))}/일)</span>` : ''}</div>
+    <div>${me ? `💰 금 <b class="gold">${num(me.gold)}</b> <span class="dim">(수입 ${num(grossOf(W, me))} − 유지비 ${num(upkeepOf(me))} = </span><b>+${num(incomeOf(W, me))}</b><span class="dim">/일)</span>` : ''}</div>
     <div style="min-width:220px"><b>${W.d}일차</b> <span class="dim">다음 날까지 ${tleft}</span><div class="bar"><div style="width:${(inDay / DAY_SECONDS) * 100}%"></div></div></div></div>
     ${speedBtns ? `<div class="panel">${speedBtns}</div>` : ''}`;
 
@@ -1005,7 +1014,7 @@ function renderPlay() {
   let body = '';
   if (ui.tab === 'map') body = tabMap(W, me);
   else if (!me) body = '<div class="panel">문파가 없어서 관전만 할 수 있어요. 지도와 천하 형세 탭을 봐주세요.</div>';
-  else if (ui.tab === 'sect') body = tabSect(W, me);
+  else if (ui.tab === 'sect') body = financePanel(W, me) + tabSect(W, me);
   else if (ui.tab === 'org') body = tabOrg(W, me);
   else if (ui.tab === 'arts') body = tabArts(W, me);
   else if (ui.tab === 'pill') body = tabPill(W, me);
@@ -1165,9 +1174,9 @@ function tabSect(W, me) {
   }).reverse().join('');
   return `<div class="panel"><h3>🏯 ${me.name} 무인 현황 <span class="tag me">${rankOf(me).label}</span></h3>${rankOf(me).next ? `<div class="dim">다음 등급 「${rankOf(me).next[1]}」까지 전투력 ${num(rankOf(me).p)} / ${num(rankOf(me).next[0])}</div><div class="bar" style="margin:4px 0 8px"><div style="width:${Math.min(100, rankOf(me).p / rankOf(me).next[0] * 100)}%"></div></div>` : ''}
     <div class="dim">대규모로 키울지, 소수정예로 키울지는 문주의 선택이에요. 삼류를 늘리면 싸고 빠르지만 약하고, 높은 경지는 비싸고 느리지만 전투에서 훨씬 오래 살아남아요.</div>
-    <div style="margin:8px 0">모집: ${btn('data-act="recruit" data-n="100"', '삼류 100명 (100금)', me.gold < 100)}${btn('data-act="recruit" data-n="500"', '삼류 500명 (500금)', me.gold < 500)}</div>
+    <div style="margin:8px 0">모집: ${[10, 50, 100].map(n => btn(`data-act="recruit" data-n="${n}"`, `삼류 ${n}명 (${num(n * RECRUIT_COST)}금)`, me.gold < n * RECRUIT_COST)).join('')}</div>
     <div style="margin:10px 0;padding:10px;border:1px solid #9b793f;border-radius:8px;background:linear-gradient(120deg,#302719,#1d1a16)"><b class="gold">🎓 10대제자 수련원</b><div class="dim">삼류·이류 제자 10명을 입관시켜 3일간 수련합니다. 졸업 시 전원 일류가 됩니다. (입관 비용 1,200금)</div>${me.academy ? `<div class="gold">수련 진행 중 · 남은 기간 ${me.academy.days}일 · 졸업 예정 ${me.academy.count}명</div>` : btn('data-act="academy"', '제자 10명 수련원 입관 (1,200금)', me.gold < 1200 || c[0] + c[1] < 10)}${!me.academy && c[0] + c[1] < 10 ? '<div class="red">삼류·이류 제자가 최소 10명 필요합니다.</div>' : ''}</div>
-    <table><tr><th>경지</th><th>인원</th><th style="text-align:left">직접 지도(금으로 한 단계 승급)</th></tr>${rows}
+    <table><tr><th>경지</th><th>인원</th><th style="text-align:left">직접 지도(일류 이상은 성공 확률 1/3 · 실패해도 금 소모)</th></tr>${rows}
     <tr><th>합계</th><th>${num(total)}</th><th style="text-align:left" class="dim">조직 배치 ${num(org)}명 · 출정 중 ${num(away)}명 포함 아님</th></tr></table>
     <div class="dim" style="margin-top:8px">⚙️ 하루마다 자연 승급이 판정돼요. 문파별 무인 자질 보정에 제자단·약초밭 효과가 추가 적용됩니다.</div>
     <div class="dim" style="margin-top:5px">문파 자질: ${SECTS[me.name].talentLabel || '일반 자질 보정 ×1.0'} · 문주 부재 시 승급 확률 50%</div>
@@ -1235,6 +1244,17 @@ function tabWorld0(W, me) {
     ${dead ? `<div class="dim" style="margin-top:8px">멸문: ${dead}</div>` : ''}</div>`;
 }
 
+function financePanel(W, me) {
+  const mult = (SECTS[me.name].traits && SECTS[me.name].traits.stats.income) || 1;
+  const nodes = Object.keys(W.nodes).filter(id => W.nodes[id].owner === me.name && NODES[id].income > 0).sort((a, b) => NODES[b].income - NODES[a].income);
+  const land = sum(nodes.map(id => NODES[id].income)), shop = (me.orgs['상단'] || 0) * 3;
+  return `<div class="panel"><h3>💰 재정 (하루 기준)</h3><table>
+    <tr><td>기본 수입</td><td>+150</td></tr><tr><td>상단 (${me.orgs['상단'] || 0}명 × 3)</td><td>+${num(shop)}</td></tr>
+    <tr><td>영토 수입 (${nodes.length}곳)</td><td>+${num(land)}</td></tr><tr><td>문파 수입 보정</td><td>×${mult}</td></tr>
+    <tr><td><b>총수입</b></td><td><b>${num(grossOf(W, me))}</b></td></tr><tr><td>인원 유지비</td><td class="red">−${num(upkeepOf(me))}</td></tr>
+    <tr><td><b>하루 순수입</b></td><td><b class="gold">+${num(incomeOf(W, me))}</b></td></tr></table>
+    <div class="dim" style="margin-top:6px">영토: ${nodes.map(id => `${esc(id)} +${NODES[id].income}`).join(' · ') || '없음'}</div></div>`;
+}
 const mrow = (m, s, extra) => { const t = masterStats(m, s); return `<tr><td><b class="gold">「${esc(m.alias)}」</b> ${esc(m.name)}<span class="tag">${REALMS[m.realm]}</span>${m.pills ? `<span class="tag">영단 ${m.pills}회</span>` : ''}</td>${extra || ''}<td>${num(t.hp)}</td><td>${t.qi}갑자</td><td>${num(t.atk)}</td></tr>`; };
 function tabPill(W, me) {
   const P = me.pills || {};
